@@ -174,13 +174,90 @@ window.ComboSettingsForm = (function () {
         element('div', { class: 'row' }, [rotation])
       ]);
 
+      // Labels, following Tableau's Label shelf
+      const labels = draft.labels;
+      const labelsOff = !labels.show;
+      const marks = select([
+        ['all', 'All'],
+        ['minmax', 'Min and max'],
+        ['recent', 'Most recent']
+      ], labels.marks, 'Marks to label');
+      marks.addEventListener('change', () => { labels.marks = marks.value; });
+
+      const labelNumberFormat = select([
+        ['axis', 'Same as value axis'],
+        ['tableau', 'Field format from Tableau'],
+        ['custom', 'Custom']
+      ], labels.numberFormat, 'Label number format');
+      labelNumberFormat.addEventListener('change', () => { labels.numberFormat = labelNumberFormat.value; renderForm(); });
+      const custom = labels.numberFormat === 'custom';
+      const labelFormat = select([['number', 'Number'], ['currency', 'Currency'], ['percent', 'Percentage']], labels.format, 'Custom label format');
+      labelFormat.addEventListener('change', () => { labels.format = labelFormat.value; renderForm(); });
+      const labelDecimals = numberInput(labels.decimals, 0, 6, 'Label decimal places');
+      labelDecimals.addEventListener('change', () => { labels.decimals = clamp(labelDecimals.value, 0, 6, labels.decimals); });
+      const labelUnits = select([
+        ['none', 'None'],
+        ['thousands', 'Thousands (K)'],
+        ['millions', 'Millions (M)'],
+        ['billions', 'Billions (B)']
+      ], labels.units, 'Label display units');
+      labelUnits.addEventListener('change', () => { labels.units = labelUnits.value; });
+      const labelSymbol = textInput(labels.currencySymbol, '$', 'Label currency symbol', 'symbol-text');
+      labelSymbol.addEventListener('input', () => { labels.currencySymbol = labelSymbol.value; });
+      labelFormat.disabled = labelDecimals.disabled = !custom;
+      labelUnits.disabled = !custom || labels.format === 'percent';
+      labelSymbol.disabled = !custom || labels.format !== 'currency';
+
+      const fontSize = numberInput(labels.fontSize, 7, 24, 'Label font size');
+      fontSize.addEventListener('change', () => { labels.fontSize = clamp(fontSize.value, 7, 24, labels.fontSize); });
+      const colorMode = select([
+        ['auto', 'Automatic'],
+        ['mark', 'Match mark color'],
+        ['custom', 'Custom']
+      ], labels.colorMode, 'Label color');
+      colorMode.addEventListener('change', () => { labels.colorMode = colorMode.value; renderForm(); });
+      const labelColor = element('input', { type: 'color', value: labels.color, 'aria-label': 'Custom label color' });
+      labelColor.disabled = labels.colorMode !== 'custom';
+      labelColor.addEventListener('input', () => { labels.color = labelColor.value; });
+      const position = select([
+        ['outside', 'Outside end'],
+        ['inside', 'Inside end'],
+        ['center', 'Center']
+      ], labels.position, 'Label position on bars');
+      position.addEventListener('change', () => { labels.position = position.value; });
+
+      const labelsSection = section('Labels', [
+        checkbox(labels.show, 'Show mark labels', checked => { labels.show = checked; renderForm(); }),
+        element('p', { class: 'hint', text: 'Format and font settings also apply to the Text field.' }),
+        element('div', { class: 'group-title', text: 'Marks to label' }),
+        element('div', { class: 'row' }, [marks, element('span', { text: 'Position on bars' }), position]),
+        element('div', { class: 'group-title', text: 'Number format' }),
+        element('div', { class: 'row' }, [labelNumberFormat]),
+        element('div', { class: 'row' }, [
+          labelFormat,
+          element('span', { text: 'Decimals' }), labelDecimals,
+          element('span', { text: 'Units' }), labelUnits,
+          element('span', { text: 'Symbol' }), labelSymbol
+        ]),
+        element('div', { class: 'group-title', text: 'Font' }),
+        element('div', { class: 'row' }, [
+          element('span', { text: 'Size' }), fontSize,
+          element('span', { text: 'Color' }), colorMode, labelColor,
+          checkbox(labels.bold, 'Bold', checked => { labels.bold = checked; })
+        ]),
+        checkbox(labels.applyToTooltips, 'Use this number format in tooltips', checked => { labels.applyToTooltips = checked; })
+      ]);
+      // Only "Show mark labels" stays active while labels are off
+      if (labelsOff) {
+        for (const control of labelsSection.querySelectorAll('select, input:not([type="checkbox"])')) control.disabled = true;
+        const [, ...otherChecks] = labelsSection.querySelectorAll('input[type="checkbox"]');
+        for (const control of otherChecks) control.disabled = true;
+      }
+
       // Display
-      const valueLabels = element('input', { type: 'checkbox', checked: draft.display.valueLabels });
-      valueLabels.addEventListener('change', () => { draft.display.valueLabels = valueLabels.checked; });
       const tooltips = element('input', { type: 'checkbox', checked: draft.display.tooltips });
       tooltips.addEventListener('change', () => { draft.display.tooltips = tooltips.checked; });
       const displaySection = section('Display', [
-        element('label', { class: 'check' }, [valueLabels, ' Show measure values on marks']),
         element('label', { class: 'check' }, [tooltips, ' Show tooltips'])
       ]);
 
@@ -287,6 +364,7 @@ window.ComboSettingsForm = (function () {
         ...(colorSection ? [colorSection] : []),
         valueAxisSection,
         categoryAxisSection,
+        labelsSection,
         displaySection,
         forecastSection,
         element('div', { class: 'settings-buttons' }, [reset, element('span', { class: 'spacer' }), cancel, ok])

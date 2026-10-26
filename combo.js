@@ -22,7 +22,24 @@
   };
   const DEFAULT_STATE = {
     series: {},
-    display: { valueLabels: false, tooltips: true },
+    display: { tooltips: true },
+    // Mark labels, like Tableau's Label shelf. numberFormat: 'axis' (follow the value axis),
+    // 'tableau' (the field's own format), or 'custom' (format, decimals, units, currencySymbol below).
+    labels: {
+      show: false,
+      marks: 'all',
+      numberFormat: 'axis',
+      format: 'number',
+      decimals: 0,
+      units: 'none',
+      currencySymbol: '$',
+      fontSize: 10,
+      colorMode: 'auto',
+      color: '#3c4043',
+      bold: false,
+      position: 'outside',
+      applyToTooltips: true
+    },
     // Field on the Color encoding splits the primary (first) bar measure
     colorGroup: { layout: 'stacked', colors: {} },
     // Mirrors Tableau's Edit Axis options; empty strings mean "Automatic"
@@ -87,7 +104,9 @@
   function mergeState (saved) {
     return {
       series: { ...saved.series },
-      display: { ...DEFAULT_STATE.display, ...saved.display },
+      display: { tooltips: saved.display?.tooltips ?? DEFAULT_STATE.display.tooltips },
+      // Older saved settings kept "show values" under display.valueLabels
+      labels: { ...DEFAULT_STATE.labels, show: Boolean(saved.display?.valueLabels), ...saved.labels },
       axis: { ...DEFAULT_STATE.axis, ...saved.axis },
       colorGroup: {
         ...DEFAULT_STATE.colorGroup,
@@ -393,23 +412,40 @@
     return Number.isFinite(number) ? number : null;
   }
 
-  function formatAxisNumber (value) {
-    const axis = state.axis;
-    if (axis.format === 'auto') return numberFormat.format(value);
+  // options: { format: 'auto' | 'number' | 'currency' | 'percent', decimals, units, currencySymbol }
+  function formatNumber (value, options) {
+    if (options.format === 'auto') return numberFormat.format(value);
     const [divisor, suffix] = {
       thousands: [1e3, 'K'],
       millions: [1e6, 'M'],
       billions: [1e9, 'B']
-    }[axis.format === 'percent' ? 'none' : axis.units] || [1, ''];
-    const scaled = axis.format === 'percent' ? value * 100 : value / divisor;
+    }[options.format === 'percent' ? 'none' : options.units] || [1, ''];
+    const scaled = options.format === 'percent' ? value * 100 : value / divisor;
     const text = new Intl.NumberFormat(undefined, {
-      minimumFractionDigits: axis.decimals,
-      maximumFractionDigits: axis.decimals
+      minimumFractionDigits: options.decimals,
+      maximumFractionDigits: options.decimals
     }).format(Math.abs(scaled));
     const sign = scaled < 0 && text.replace(/[0.,\s]/g, '') !== '' ? '-' : '';
-    if (axis.format === 'percent') return `${sign}${text}%`;
-    if (axis.format === 'currency') return `${sign}${axis.currencySymbol}${text}${suffix}`;
+    if (options.format === 'percent') return `${sign}${text}%`;
+    if (options.format === 'currency') return `${sign}${options.currencySymbol}${text}${suffix}`;
     return `${sign}${text}${suffix}`;
+  }
+
+  function formatAxisNumber (value) {
+    return formatNumber(value, state.axis);
+  }
+
+  // Formats a mark label. tableauLabel is the field's own formatted value from Tableau, when there is one.
+  function formatLabel (value, tableauLabel) {
+    const labels = state.labels;
+    if (value === null || value === undefined) return tableauLabel || '';
+    if (labels.numberFormat === 'custom') return formatNumber(value, labels);
+    if (labels.numberFormat === 'axis' && state.axis.format !== 'auto') return formatAxisNumber(value);
+    return tableauLabel || numberFormat.format(value);
+  }
+
+  function formatTooltipValue (value, tableauLabel) {
+    return state.labels.applyToTooltips ? formatLabel(value, tableauLabel) : (tableauLabel || numberFormat.format(value));
   }
 
   function niceStep (rawStep) {
@@ -610,7 +646,43 @@
     hideTooltip();
     chartElement.querySelector('svg')?.remove();
 
-    const { valueLabels: showValueLabels, tooltips: showTooltips } = state.display;
+    const showTooltips = state.display.tooltips;
+    const labelSettings = state.labels;
+    const showValueLabels = labelSettings.show;
+    const labelFontSize = labelSettings.fontSize;
+
+    // Which marks of one series get a label: all, the min and max, or the most recent.
+    const labelFilter = seriesValues => {
+      if (labelSettings.marks === 'all') return () => true;
+      const valid = seriesValues.map((value, index) => ({ value, index })).filter(item => item.value !== null && item.value !== undefined);
+      if (valid.length === 0) return () => false;
+      if (labelSettings.marks === 'recent') return index => index === valid[valid.length - 1].index;
+      const min = valid.reduce((best, item) => item.value < best.value ? item : best);
+      const max = valid.reduce((best, item) => item.value > best.value ? item : best);
+      return index => index === min.index || index === max.index;
+    };
+
+    const addLabel = (parent, text, x, yPosition, markColor, className = 'value-label') => {
+      const fill = labelSettings.colorMode === 'mark' && markColor ? markColor
+        : labelSettings.colorMode === 'custom' ? labelSettings.color
+          : className === 'text-label' ? '#202124' : '#3c4043';
+      const weight = labelSettings.bold || className === 'text-label' ? 600 : 400;
+      return addText(parent, text, {
+        x,
+        y: yPosition,
+        'text-anchor': 'middle',
+        style: `font-size:${labelFontSize}px;fill:${fill};font-weight:${weight}`
+      });
+    };
+
+    // Label position on a bar running from startY (baseline side) to endY (value side)
+    const barLabelY = (startY, endY) => {
+      const upward = endY <= startY;
+      if (labelSettings.position === 'center') return (startY + endY) / 2 + labelFontSize / 3;
+      if (labelSettings.position === 'inside') return upward ? endY + labelFontSize + 2 : endY - 4;
+      return upward ? endY - 4 : endY + labelFontSize + 2;
+    };
+
     const forecast = getForecast();
     const showInterval = state.forecast.showInterval;
     const forecastValues = forecast
@@ -743,6 +815,13 @@
       xCenter(slotIndex) - barWidth * totalUnits / 2 + (unitOffsets[barIndex] + subIndex) * barWidth;
     const barSpan = barIndex => barUnits[barIndex] * barWidth;
 
+    const shouldLabel = new Map(measureFields.map(field =>
+      [field.name, labelFilter(chartRows.map(row => getNumericValue(row, field)))]
+    ));
+    const shouldLabelMember = new Map(primaryBar
+      ? colorMembers.map(member => [member, labelFilter(chartRows.map(row => getBreakdown(row, primaryBar).get(member)?.value ?? null))])
+      : []);
+
     const drawColorBars = (row, categoryIndex, barIndex) => {
       const breakdown = getBreakdown(row, primaryBar);
       let positive = 0;
@@ -770,22 +849,20 @@
           stroke: sideBySide ? 'none' : '#fff',
           'stroke-width': 0.5
         }));
-        if (showValueLabels && sideBySide) {
-          addText(plot, item.label, {
-            x: left + width / 2,
-            y: item.value >= 0 ? toY - 4 : toY + 12,
-            'text-anchor': 'middle',
-            class: 'value-label'
-          });
+        if (showValueLabels && sideBySide && shouldLabelMember.get(member)(categoryIndex)) {
+          addLabel(plot, formatLabel(item.value, item.label), left + width / 2, barLabelY(fromY, toY), getMemberColor(member));
         }
       });
-      if (showValueLabels && !sideBySide) {
-        addText(plot, getLabel(row[primaryBar.name]), {
-          x: barX(categoryIndex, barIndex) + barSpan(barIndex) / 2,
-          y: (positive !== 0 ? y(positive) : zeroY) - 4,
-          'text-anchor': 'middle',
-          class: 'value-label'
-        });
+      // Stacked bars get one label for the total
+      if (showValueLabels && !sideBySide && shouldLabel.get(primaryBar.name)(categoryIndex)) {
+        const endY = positive !== 0 ? y(positive) : negative !== 0 ? y(negative) : zeroY;
+        addLabel(
+          plot,
+          formatLabel(getNumericValue(row, primaryBar), getLabel(row[primaryBar.name])),
+          barX(categoryIndex, barIndex) + barSpan(barIndex) / 2,
+          barLabelY(zeroY, endY),
+          getSeries(primaryBar).color
+        );
       }
     };
 
@@ -806,13 +883,14 @@
           fill: getSeries(field).color,
           rx: 1
         }));
-        if (showValueLabels) {
-          addText(plot, getLabel(row[field.name]), {
-            x: barX(categoryIndex, barIndex) + barWidth / 2,
-            y: value >= 0 ? yValue - 4 : yValue + 12,
-            'text-anchor': 'middle',
-            class: 'value-label'
-          });
+        if (showValueLabels && shouldLabel.get(field.name)(categoryIndex)) {
+          addLabel(
+            plot,
+            formatLabel(value, getLabel(row[field.name])),
+            barX(categoryIndex, barIndex) + barWidth / 2,
+            barLabelY(zeroY, yValue),
+            getSeries(field).color
+          );
         }
       });
     });
@@ -852,18 +930,15 @@
           stroke: '#fff',
           'stroke-width': 1.5
         }));
-        if (showValueLabels) {
-          addText(plot, getLabel(chartRows[point.categoryIndex][field.name]), {
-            x: point.x,
-            y: point.y - 8,
-            'text-anchor': 'middle',
-            class: 'value-label'
-          });
+        if (showValueLabels && shouldLabel.get(field.name)(point.categoryIndex)) {
+          addLabel(plot, formatLabel(point.value, getLabel(chartRows[point.categoryIndex][field.name])), point.x, point.y - 8, color);
         }
       });
     });
 
     // Forecast marks use the measure's own mark type in a lighter shade, as Tableau does.
+    // Min/max and most-recent labels apply to actual data only
+    const labelForecast = showValueLabels && labelSettings.marks === 'all';
     if (forecast) {
       forecast.series.forEach(({ field, points }) => {
         const { mode, color } = getSeries(field);
@@ -896,13 +971,8 @@
                 fill: 'none'
               }));
             }
-            if (showValueLabels) {
-              addText(plot, formatAxisNumber(point.value), {
-                x: center,
-                y: (showInterval ? y(point.high) : yValue) - 4,
-                'text-anchor': 'middle',
-                class: 'value-label'
-              });
+            if (labelForecast) {
+              addLabel(plot, formatLabel(point.value), center, showInterval ? Math.min(y(point.high), y(point.low)) - 4 : barLabelY(zeroY, yValue), color);
             }
           });
           return;
@@ -942,13 +1012,8 @@
             stroke: color,
             'stroke-width': 2
           }));
-          if (showValueLabels) {
-            addText(plot, formatAxisNumber(point.value), {
-              x: xCenter(point.slot),
-              y: y(point.value) - 8,
-              'text-anchor': 'middle',
-              class: 'value-label'
-            });
+          if (labelForecast) {
+            addLabel(plot, formatLabel(point.value), xCenter(point.slot), y(point.value) - 8, color);
           }
         });
       });
@@ -958,12 +1023,10 @@
       chartRows.forEach((row, categoryIndex) => {
         const rowValues = measureFields.map(field => getNumericValue(row, field)).filter(value => value !== null);
         const top = Math.min(zeroY, ...rowValues.map(y));
-        addText(plot, getLabel(row[labelField.name]), {
-          x: xCenter(categoryIndex),
-          y: Math.max(12, top - (showValueLabels ? 18 : 6)),
-          'text-anchor': 'middle',
-          class: 'text-label'
-        });
+        // A numeric Text field follows the label number format too
+        const textValue = getValue(row[labelField.name]);
+        const text = typeof textValue === 'number' ? formatLabel(textValue, getLabel(row[labelField.name])) : getLabel(row[labelField.name]);
+        addLabel(plot, text, xCenter(categoryIndex), Math.max(12, top - (showValueLabels ? labelFontSize + 8 : 6)), null, 'text-label');
       });
     }
 
@@ -1014,10 +1077,10 @@
           return {
             title: `${forecast.labels[forecastIndex]} (forecast)`,
             rows: forecast.series.flatMap(({ field, points, description }) => [
-              { name: field.name, value: formatAxisNumber(points[forecastIndex].value), color: getSeries(field).color },
+              { name: field.name, value: formatTooltipValue(points[forecastIndex].value), color: getSeries(field).color },
               ...(showInterval ? [{
                 name: `${state.forecast.interval}% prediction interval`,
-                value: `${formatAxisNumber(points[forecastIndex].low)} – ${formatAxisNumber(points[forecastIndex].high)}`
+                value: `${formatTooltipValue(points[forecastIndex].low)} – ${formatTooltipValue(points[forecastIndex].high)}`
               }] : []),
               { name: 'Model', value: description }
             ])
@@ -1028,11 +1091,11 @@
           title: categories[index],
           rows: [
             ...measureFields.flatMap(field => [
-              { name: field.name, value: getLabel(row[field.name]), color: field === primaryBar ? null : getSeries(field).color },
+              { name: field.name, value: formatTooltipValue(getNumericValue(row, field), getLabel(row[field.name])), color: field === primaryBar ? null : getSeries(field).color },
               ...(field === primaryBar
                 ? colorMembers
                   .filter(member => getBreakdown(row, field).has(member))
-                  .map(member => ({ name: member, value: getBreakdown(row, field).get(member).label, color: getMemberColor(member) }))
+                  .map(member => ({ name: member, value: formatTooltipValue(getBreakdown(row, field).get(member).value, getBreakdown(row, field).get(member).label), color: getMemberColor(member) }))
                 : [])
             ]),
             ...(labelField ? [{ name: labelField.name, value: getLabel(row[labelField.name]) }] : []),

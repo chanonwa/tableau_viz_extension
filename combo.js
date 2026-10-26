@@ -27,6 +27,8 @@
     // 'tableau' (the field's own format), or 'custom' (format, decimals, units, currencySymbol below).
     labels: {
       show: false,
+      // Labels from the field on the Text encoding
+      showText: true,
       marks: 'all',
       numberFormat: 'axis',
       format: 'number',
@@ -649,6 +651,7 @@
     const showTooltips = state.display.tooltips;
     const labelSettings = state.labels;
     const showValueLabels = labelSettings.show;
+    const showTextLabels = Boolean(labelField) && labelSettings.showText;
     const labelFontSize = labelSettings.fontSize;
 
     // Which marks of one series get a label: all, the min and max, or the most recent.
@@ -725,7 +728,7 @@
     const height = Math.max(220, chartElement.clientHeight - 8);
     const labelDepth = angle === 0 ? 24 : Math.min(height * 0.35, 16 + longestLabel * 6 * (angle === 45 ? 0.72 : 1));
     const margin = {
-      top: labelField || showValueLabels ? 32 : 16,
+      top: showTextLabels || showValueLabels ? 32 : 16,
       right: 18,
       bottom: 16 + labelDepth + (categoryTitle ? 20 : 0),
       left: Math.max(40, 14 + Math.max(0, ...tickLabels.map(label => label.length)) * 6.5 + (valueTitle ? 22 : 0))
@@ -1019,7 +1022,7 @@
       });
     }
 
-    if (labelField) {
+    if (showTextLabels) {
       chartRows.forEach((row, categoryIndex) => {
         const rowValues = measureFields.map(field => getNumericValue(row, field)).filter(value => value !== null);
         const top = Math.min(zeroY, ...rowValues.map(y));

@@ -228,7 +228,8 @@ window.ComboSettingsForm = (function () {
 
       const labelsSection = section('Labels', [
         checkbox(labels.show, 'Show mark labels', checked => { labels.show = checked; renderForm(); }),
-        element('p', { class: 'hint', text: 'Format and font settings also apply to the Text field.' }),
+        checkbox(labels.showText, 'Show Text field labels (the field on the Text encoding)', checked => { labels.showText = checked; renderForm(); }),
+        element('p', { class: 'hint', text: 'Format and font settings apply to both kinds of label.' }),
         element('div', { class: 'group-title', text: 'Marks to label' }),
         element('div', { class: 'row' }, [marks, element('span', { text: 'Position on bars' }), position]),
         element('div', { class: 'group-title', text: 'Number format' }),
@@ -247,10 +248,10 @@ window.ComboSettingsForm = (function () {
         ]),
         checkbox(labels.applyToTooltips, 'Use this number format in tooltips', checked => { labels.applyToTooltips = checked; })
       ]);
-      // Only "Show mark labels" stays active while labels are off
-      if (labelsOff) {
+      // With both kinds of label off, only the two show checkboxes stay active
+      if (labelsOff && !labels.showText) {
         for (const control of labelsSection.querySelectorAll('select, input:not([type="checkbox"])')) control.disabled = true;
-        const [, ...otherChecks] = labelsSection.querySelectorAll('input[type="checkbox"]');
+        const [, , ...otherChecks] = labelsSection.querySelectorAll('input[type="checkbox"]');
         for (const control of otherChecks) control.disabled = true;
       }
 

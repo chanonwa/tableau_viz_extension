@@ -4,7 +4,7 @@
     <default-locale>en_US</default-locale>
     <name resource-id="name"/>
     <description>A combo chart with multiple measures and configurable bar or line series.</description>
-    <author name="Local Developer" organization="Local"/>
+    <author name="Chanon Wasusopon" email="cwasusopon@gmail.com" organization="Local" website="https://github.com/chanonwa/tableau_viz_extension"/>
     <min-api-version>1.11</min-api-version>
     <source-location>
       <url>http://localhost:8765/index.html</url>

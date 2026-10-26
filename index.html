@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Multi-Measure Combo Chart</title>
+    <style>
+      :root {
+        color: #202124;
+        font: 14px "Segoe UI", Arial, sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+      }
+
+      body {
+        display: flex;
+        flex-direction: column;
+        min-width: 320px;
+        background: #fff;
+      }
+
+      header {
+        flex: 0 0 auto;
+        padding: 12px 16px 8px;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 16px;
+        font-weight: 600;
+      }
+
+      #series-list {
+        display: flex;
+        gap: 6px;
+        overflow-x: auto;
+        padding: 2px 0 6px;
+      }
+
+      .series-control {
+        display: inline-flex;
+        flex: 0 0 auto;
+        align-items: center;
+        gap: 7px;
+        max-width: 260px;
+        padding: 5px 8px;
+        border: 1px solid #dadce0;
+        border-radius: 4px;
+        background: #fff;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+      }
+
+      .series-control:hover,
+      .series-control:focus-visible {
+        border-color: #5b6b7a;
+        outline: none;
+      }
+
+      .series-control-wrap {
+        display: inline-flex;
+        flex: 0 0 auto;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .line-style {
+        max-width: 98px;
+        padding: 5px 4px;
+        border: 1px solid #dadce0;
+        border-radius: 4px;
+        background: #fff;
+        color: #5f6368;
+        font: inherit;
+        font-size: 11px;
+      }
+
+      .line-style:disabled {
+        opacity: 0.5;
+      }
+
+      .series-name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .series-mode {
+        color: #5f6368;
+        font-size: 11px;
+        text-transform: uppercase;
+      }
+
+      #chart {
+        position: relative;
+        flex: 1 1 auto;
+        min-height: 220px;
+        padding: 0 8px 8px;
+      }
+
+      #chart svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+        overflow: visible;
+      }
+
+      #message {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        color: #5f6368;
+        text-align: center;
+      }
+
+      #message[hidden] {
+        display: none;
+      }
+
+      .axis-label,
+      .tick-label {
+        fill: #5f6368;
+        font-size: 11px;
+      }
+
+      .grid-line {
+        stroke: #e8eaed;
+        stroke-width: 1;
+      }
+
+      .axis-line {
+        stroke: #9aa0a6;
+        stroke-width: 1;
+      }
+    </style>
+    <script defer src="./vendor/tableau.extensions.1.latest.min.js"></script>
+    <script defer src="./combo.js"></script>
+  </head>
+  <body>
+    <header>
+      <h1>Multi-Measure Combo Chart</h1>
+      <div id="series-list" aria-label="Series chart types and line styles"></div>
+    </header>
+    <main id="chart" aria-label="Combo chart">
+      <div id="message" role="status" hidden></div>
+    </main>
+  </body>
+</html>

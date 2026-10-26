@@ -226,10 +226,24 @@ window.ComboSettingsForm = (function () {
       ], labels.position, 'Label position on bars');
       position.addEventListener('change', () => { labels.position = position.value; });
 
+      // Text field labels only exist when a field is on the Text encoding
+      const textCheckbox = checkbox(
+        labels.showText,
+        payload.textFieldName ? `Show Text field labels (${payload.textFieldName})` : 'Show Text field labels (no field on Text)',
+        checked => { labels.showText = checked; renderForm(); }
+      );
+      if (!payload.textFieldName) textCheckbox.querySelector('input').disabled = true;
+      const textLabelsOn = labels.showText && Boolean(payload.textFieldName);
+
       const labelsSection = section('Labels', [
         checkbox(labels.show, 'Show mark labels', checked => { labels.show = checked; renderForm(); }),
-        checkbox(labels.showText, 'Show Text field labels (the field on the Text encoding)', checked => { labels.showText = checked; renderForm(); }),
-        element('p', { class: 'hint', text: 'Format and font settings apply to both kinds of label.' }),
+        textCheckbox,
+        element('p', {
+          class: 'hint',
+          text: payload.textFieldName
+            ? `Mark labels show each measure's value on its bar or point. Text field labels show ${payload.textFieldName} once above each category. Format and font settings apply to both.`
+            : 'Mark labels show each measure\'s value on its bar or point. To use Text field labels, drag a field onto the Text slot on the Marks card.'
+        }),
         element('div', { class: 'group-title', text: 'Marks to label' }),
         element('div', { class: 'row' }, [marks, element('span', { text: 'Position on bars' }), position]),
         element('div', { class: 'group-title', text: 'Number format' }),
@@ -249,7 +263,7 @@ window.ComboSettingsForm = (function () {
         checkbox(labels.applyToTooltips, 'Use this number format in tooltips', checked => { labels.applyToTooltips = checked; })
       ]);
       // With both kinds of label off, only the two show checkboxes stay active
-      if (labelsOff && !labels.showText) {
+      if (labelsOff && !textLabelsOn) {
         for (const control of labelsSection.querySelectorAll('select, input:not([type="checkbox"])')) control.disabled = true;
         const [, , ...otherChecks] = labelsSection.querySelectorAll('input[type="checkbox"]');
         for (const control of otherChecks) control.disabled = true;

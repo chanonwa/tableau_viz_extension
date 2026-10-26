@@ -297,6 +297,43 @@
     tooltipContent = null;
   }
 
+  // Small sample of a mark for legends and tooltips: a square for bars, a styled line for lines.
+  // mark: { mode: 'bar' | 'line', color, lineStyle, forecast }
+  function createMarkSwatch (mark) {
+    const swatch = createSvgElement('svg', { width: 18, height: 10, 'aria-hidden': 'true' });
+    if (mark.mode === 'bar') {
+      swatch.appendChild(createSvgElement('rect', {
+        x: 4,
+        y: 0,
+        width: 10,
+        height: 10,
+        rx: 2,
+        fill: mark.color,
+        'fill-opacity': mark.forecast ? 0.4 : 1
+      }));
+      return swatch;
+    }
+    // Dash patterns are halved so they read at legend size
+    const dash = mark.forecast ? '6 4' : LINE_STYLES[mark.lineStyle];
+    swatch.appendChild(createSvgElement('line', {
+      x1: 1,
+      x2: 17,
+      y1: 5,
+      y2: 5,
+      stroke: mark.color,
+      'stroke-opacity': mark.forecast ? 0.6 : 1,
+      'stroke-width': 2.5,
+      'stroke-linecap': 'round',
+      'stroke-dasharray': dash ? dash.split(' ').map(length => length / 2).join(' ') : 'none'
+    }));
+    return swatch;
+  }
+
+  function seriesMark (field) {
+    const { mode, color, lineStyle } = getSeries(field);
+    return { mode, color, lineStyle };
+  }
+
   function showTooltip (event, content) {
     if (tooltipContent !== content) {
       tooltipContent = content;
@@ -306,10 +343,9 @@
       const rows = content.rows.map(item => {
         const row = document.createElement('div');
         row.className = 'tooltip-row';
-        if (item.color) {
-          const swatch = document.createElement('span');
-          swatch.className = 'tooltip-swatch';
-          swatch.style.backgroundColor = item.color;
+        if (item.mark) {
+          const swatch = createMarkSwatch(item.mark);
+          swatch.classList.add('tooltip-swatch');
           row.appendChild(swatch);
         }
         const name = document.createElement('span');
@@ -352,6 +388,7 @@
     return {
       state,
       defaultState: mergeState({}),
+      textFieldName: labelField?.name ?? null,
       measures: measureFields.map((field, index) => {
         const defaults = getDefaultSeries(index);
         return { name: field.name, ...getSeries(field), defaultMode: defaults.mode, defaultColor: defaults.color };
@@ -596,21 +633,7 @@
       item.className = 'legend-item';
       item.title = `${field.name}: ${mode === 'bar' ? 'Bar' : `${lineStyle} line`}. Change it in Format Extension.`;
 
-      const swatch = createSvgElement('svg', { width: 18, height: 10, 'aria-hidden': 'true' });
-      swatch.appendChild(mode === 'bar'
-        ? createSvgElement('rect', { x: 4, y: 0, width: 10, height: 10, rx: 2, fill: color })
-        : createSvgElement('line', {
-          x1: 1,
-          x2: 17,
-          y1: 5,
-          y2: 5,
-          stroke: color,
-          'stroke-width': 2.5,
-          'stroke-linecap': 'round',
-          'stroke-dasharray': LINE_STYLES[lineStyle] ? LINE_STYLES[lineStyle].split(' ').map(length => length / 2).join(' ') : 'none'
-        }));
-
-      item.append(swatch, field.name);
+      item.append(createMarkSwatch({ mode, color, lineStyle }), field.name);
       seriesListElement.appendChild(item);
     });
   }
@@ -1077,7 +1100,7 @@
           return {
             title: `${forecast.labels[forecastIndex]} (forecast)`,
             rows: forecast.series.flatMap(({ field, points, description }) => [
-              { name: field.name, value: formatTooltipValue(points[forecastIndex].value), color: getSeries(field).color },
+              { name: field.name, value: formatTooltipValue(points[forecastIndex].value), mark: { ...seriesMark(field), forecast: true } },
               ...(showInterval ? [{
                 name: `${state.forecast.interval}% prediction interval`,
                 value: `${formatTooltipValue(points[forecastIndex].low)} – ${formatTooltipValue(points[forecastIndex].high)}`
@@ -1091,11 +1114,11 @@
           title: categories[index],
           rows: [
             ...measureFields.flatMap(field => [
-              { name: field.name, value: formatTooltipValue(getNumericValue(row, field), getLabel(row[field.name])), color: field === primaryBar ? null : getSeries(field).color },
+              { name: field.name, value: formatTooltipValue(getNumericValue(row, field), getLabel(row[field.name])), mark: field === primaryBar ? null : seriesMark(field) },
               ...(field === primaryBar
                 ? colorMembers
                   .filter(member => getBreakdown(row, field).has(member))
-                  .map(member => ({ name: member, value: formatTooltipValue(getBreakdown(row, field).get(member).value, getBreakdown(row, field).get(member).label), color: getMemberColor(member) }))
+                  .map(member => ({ name: member, value: formatTooltipValue(getBreakdown(row, field).get(member).value, getBreakdown(row, field).get(member).label), mark: { mode: 'bar', color: getMemberColor(member) } }))
                 : [])
             ]),
             ...(labelField ? [{ name: labelField.name, value: getLabel(row[labelField.name]) }] : []),

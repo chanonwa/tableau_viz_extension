@@ -18,7 +18,7 @@ The extension uses Tableau's summary data and refreshes when the worksheet data 
 
 ## Settings
 
-Open the settings from the extension's dropdown on the Marks card (**Format Extension**), the ⚙ button on the chart, or by double-clicking an axis. Settings are saved in the workbook.
+Open the settings from the extension's dropdown on the Marks card (**Format Extension**) or by double-clicking an axis. Settings are saved in the workbook.
 
 - **Measures**: mark type (bar or line), line style, and color for each measure.
 - **Value axis** (like Tableau's Edit Axis): title, fixed start and end, include zero, reversed and logarithmic scales, automatic, fixed-interval, or no tick marks, grid lines, and number format (number, currency, or percentage, with decimals and K/M/B units).

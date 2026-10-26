@@ -88,7 +88,6 @@
   const colorLegendElement = document.getElementById('color-legend');
   const forecastNoteElement = document.getElementById('forecast-note');
   const tooltipElement = document.getElementById('tooltip');
-  const settingsButton = document.getElementById('settings-button');
   const settingsOverlay = document.getElementById('settings-overlay');
   const settingsFormElement = document.getElementById('settings-form');
 
@@ -405,8 +404,6 @@
       openSettingsPanel();
     }
   }
-
-  settingsButton.addEventListener('click', openSettings);
 
   function parseNumber (text) {
     if (text == null || String(text).trim() === '') return null;

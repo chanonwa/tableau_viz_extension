@@ -95,13 +95,35 @@ window.AnomalySettingsForm = (function () {
       ], draft.direction, 'Direction');
       direction.addEventListener('change', () => { draft.direction = direction.value; });
 
+      const minChange = element('input', {
+        type: 'number', min: 0, max: 100, step: 1, value: draft.minChange, class: 'number-input', 'aria-label': 'Minimum change percent'
+      });
+      minChange.addEventListener('change', () => {
+        const value = Number(minChange.value);
+        if (value >= 0) draft.minChange = value;
+      });
+
+      const seasonality = select([
+        ['auto', 'Automatic (when the pattern is clear)'],
+        ['on', 'Always remove seasonality'],
+        ['off', 'Ignore seasonality']
+      ], draft.seasonality, 'Seasonality');
+      seasonality.addEventListener('change', () => { draft.seasonality = seasonality.value; });
+
       const detection = section('Detection', [
         row('Method', method),
         element('p', { class: 'hint', text: METHOD_HINTS[draft.method] }),
         row('Sensitivity', sensitivity),
         row('Threshold (k)', threshold),
         row('Window (points)', windowSize),
-        row('Flag', direction)
+        row('Flag', direction),
+        row('Ignore changes under (% of expected)', minChange),
+        row('Seasonality', seasonality),
+        element('p', {
+          class: 'hint',
+          text: 'Dates only. The season follows the date level: months repeat every 12, quarters every 4, days every 7 ' +
+            '(weekday), weeks every 52. Needs two full cycles. Removing it stops regular seasonal peaks being flagged.'
+        })
       ]);
 
       // Measures to analyse
@@ -115,6 +137,24 @@ window.AnomalySettingsForm = (function () {
         ? [element('div', { class: 'check-list' }, measureChecks)]
         : [element('p', { class: 'hint', text: 'Add measures to the Measures encoding to choose them here.' })]);
 
+      // How rows for the same category are combined
+      const aggregation = select([
+        ['sum', 'Sum'],
+        ['average', 'Average'],
+        ['min', 'Minimum'],
+        ['max', 'Maximum']
+      ], draft.aggregation, 'Combine rows by');
+      aggregation.addEventListener('change', () => { draft.aggregation = aggregation.value; });
+      const data = section('Breakdown', [
+        row('Combine rows by', aggregation),
+        element('p', {
+          class: 'hint',
+          text: 'Used for totals across Breakdown members and for rows that share a category. ' +
+            'Use Sum for SUM and COUNT measures, Average for AVG measures.'
+        }),
+        checkbox(draft.showSegments, 'Show segment table for drilling down', value => { draft.showSegments = value; })
+      ]);
+
       // Display
       const display = draft.display;
       const displaySection = section('Display', [
@@ -122,6 +162,8 @@ window.AnomalySettingsForm = (function () {
           checkbox(display.band, 'Normal range band', value => { display.band = value; }),
           checkbox(display.expected, 'Expected line', value => { display.expected = value; }),
           checkbox(display.stats, 'Summary statistics', value => { display.stats = value; }),
+          checkbox(display.explanation, 'Explanation', value => { display.explanation = value; }),
+          checkbox(display.season, 'Seasonal pattern chart', value => { display.season = value; }),
           checkbox(display.list, 'Anomaly list', value => { display.list = value; }),
           checkbox(display.tooltips, 'Tooltips', value => { display.tooltips = value; })
         ])
@@ -140,6 +182,7 @@ window.AnomalySettingsForm = (function () {
       container.append(
         detection,
         measures,
+        data,
         displaySection,
         element('div', { class: 'settings-buttons' }, [reset, element('span', { class: 'spacer' }), cancel, save])
       );

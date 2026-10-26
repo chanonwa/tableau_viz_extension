@@ -176,7 +176,6 @@ window.ComboSettingsForm = (function () {
 
       // Labels, following Tableau's Label shelf
       const labels = draft.labels;
-      const labelsOff = !labels.show;
       const marks = select([
         ['all', 'All'],
         ['minmax', 'Min and max'],
@@ -227,9 +226,14 @@ window.ComboSettingsForm = (function () {
       position.addEventListener('change', () => { labels.position = position.value; });
 
       const labelsSection = section('Labels', [
-        checkbox(labels.show, 'Show mark labels', checked => { labels.show = checked; renderForm(); }),
-        checkbox(labels.showText, 'Show Text field labels (the field on the Text encoding)', checked => { labels.showText = checked; renderForm(); }),
-        element('p', { class: 'hint', text: 'Format and font settings apply to both kinds of label.' }),
+        checkbox(labels.show, 'Show mark labels (each measure\'s value on its bar or line point)', checked => { labels.show = checked; }),
+        checkbox(labels.showBreakdown, 'Show color breakdown labels (each Color value inside the primary bar)', checked => { labels.showBreakdown = checked; }),
+        checkbox(labels.showTotal, 'Show primary total labels (the primary bar total above the bar)', checked => { labels.showTotal = checked; }),
+        element('p', {
+          class: 'hint',
+          text: 'The primary measure is the first measure shown as bars. Breakdown labels need a field on the Color encoding. ' +
+            'Format and font settings also apply to the field on the Text encoding.'
+        }),
         element('div', { class: 'group-title', text: 'Marks to label' }),
         element('div', { class: 'row' }, [marks, element('span', { text: 'Position on bars' }), position]),
         element('div', { class: 'group-title', text: 'Number format' }),
@@ -248,12 +252,6 @@ window.ComboSettingsForm = (function () {
         ]),
         checkbox(labels.applyToTooltips, 'Use this number format in tooltips', checked => { labels.applyToTooltips = checked; })
       ]);
-      // With both kinds of label off, only the two show checkboxes stay active
-      if (labelsOff && !labels.showText) {
-        for (const control of labelsSection.querySelectorAll('select, input:not([type="checkbox"])')) control.disabled = true;
-        const [, , ...otherChecks] = labelsSection.querySelectorAll('input[type="checkbox"]');
-        for (const control of otherChecks) control.disabled = true;
-      }
 
       // Display
       const tooltips = element('input', { type: 'checkbox', checked: draft.display.tooltips });

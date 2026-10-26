@@ -90,9 +90,8 @@
 
       .panel {
         display: flex;
-        flex: 1 0 220px;
+        flex: 1 0 auto;
         flex-direction: column;
-        min-height: 220px;
         border-top: 1px solid #e8eaed;
         padding-top: 8px;
       }
@@ -147,7 +146,7 @@
       .panel-chart {
         position: relative;
         flex: 1 1 auto;
-        min-height: 140px;
+        min-height: 200px;
       }
 
       .panel-chart svg {
@@ -157,11 +156,6 @@
         width: 100%;
         height: 100%;
         overflow: visible;
-      }
-
-      .panel-error {
-        color: #5f6368;
-        font-size: 12px;
       }
 
       .tick-label {
@@ -221,26 +215,26 @@
         fill: rgba(60, 64, 67, 0.06);
       }
 
-      #anomaly-list {
+      .table-section {
         flex: 0 0 auto;
         border-top: 1px solid #e8eaed;
         padding-top: 8px;
       }
 
-      #anomaly-list h2 {
+      .table-section h2 {
         margin: 0 0 6px;
         font-size: 13px;
         font-weight: 600;
       }
 
-      #anomaly-list table {
+      .table-section table {
         width: 100%;
         border-collapse: collapse;
         font-size: 12px;
         font-variant-numeric: tabular-nums;
       }
 
-      #anomaly-list th {
+      .table-section th {
         padding: 3px 8px 3px 0;
         border-bottom: 1px solid #dadce0;
         color: #5f6368;
@@ -249,13 +243,126 @@
         white-space: nowrap;
       }
 
-      #anomaly-list td {
+      .table-section td {
         padding: 3px 8px 3px 0;
         border-bottom: 1px solid #f1f3f4;
+        vertical-align: top;
       }
 
-      #anomaly-list .number {
+      .table-section .number {
         text-align: right;
+      }
+
+      .table-section .nowrap {
+        white-space: nowrap;
+      }
+
+      .table-section .strong {
+        font-weight: 600;
+      }
+
+      .table-section .why {
+        min-width: 260px;
+        color: #5f6368;
+        font-variant-numeric: normal;
+      }
+
+      .table-hint {
+        margin: 0 0 6px;
+        color: #5f6368;
+        font-size: 12px;
+      }
+
+      tr.drillable {
+        cursor: pointer;
+      }
+
+      tr.drillable:hover,
+      tr.drillable:focus {
+        outline: none;
+        background: #f1f3f4;
+      }
+
+      #breadcrumb {
+        display: flex;
+        flex-wrap: wrap;
+        flex-basis: 100%;
+        align-items: center;
+        gap: 2px 6px;
+        font-size: 12px;
+      }
+
+      #breadcrumb:empty {
+        display: none;
+      }
+
+      .crumb-label {
+        color: #5f6368;
+      }
+
+      .crumb {
+        padding: 0;
+        border: 0;
+        background: none;
+        color: #1a73e8;
+        font: inherit;
+        cursor: pointer;
+      }
+
+      .crumb:hover {
+        text-decoration: underline;
+      }
+
+      .crumb-current {
+        font-weight: 600;
+      }
+
+      .crumb-separator {
+        color: #9aa0a6;
+      }
+
+      .explanation {
+        margin: 4px 0;
+        padding-left: 18px;
+        color: #3c4043;
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .profile-title {
+        margin-top: 4px;
+        color: #5f6368;
+        font-size: 11px;
+      }
+
+      .season-profile {
+        position: relative;
+        flex: 0 0 64px;
+        height: 64px;
+      }
+
+      .season-profile svg {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+
+      .season-up {
+        fill: #4e79a7;
+      }
+
+      .season-down {
+        fill: #a0cbe8;
+      }
+
+      .tooltip-note {
+        max-width: 320px;
+        margin-top: 6px;
+        padding-top: 6px;
+        border-top: 1px solid #e8eaed;
+        color: #3c4043;
+        line-height: 1.4;
       }
 
       .type-high {
@@ -376,6 +483,7 @@
         <span><i style="background:#e8710a"></i>Dip</span>
         <button id="preview-settings" type="button" hidden>Settings</button>
       </div>
+      <nav id="breadcrumb" aria-label="Drill-down path"></nav>
     </header>
     <main id="panels" aria-label="Anomaly charts">
       <div id="message" role="status" hidden></div>

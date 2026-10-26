@@ -33,6 +33,14 @@
       <fields max-count="10"/>
       <tooltip>Measures to analyse; each gets its own panel</tooltip>
     </encoding>
+    <encoding id="breakdown">
+      <display-name>Breakdown</display-name>
+      <role-spec>
+        <role-type>discrete-dimension</role-type>
+      </role-spec>
+      <fields max-count="3"/>
+      <tooltip>Dimensions to break the data down by and drill into, in drill order</tooltip>
+    </encoding>
   </worksheet-extension>
   <resources>
     <resource id="name">

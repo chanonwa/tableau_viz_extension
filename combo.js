@@ -26,9 +26,12 @@
     // Mark labels, like Tableau's Label shelf. numberFormat: 'axis' (follow the value axis),
     // 'tableau' (the field's own format), or 'custom' (format, decimals, units, currencySymbol below).
     labels: {
+      // Each measure's value on its own mark
       show: false,
-      // Labels from the field on the Text encoding
-      showText: true,
+      // Each Color member's value inside its part of the primary bar
+      showBreakdown: false,
+      // The primary bar measure's total above the bar
+      showTotal: false,
       marks: 'all',
       numberFormat: 'axis',
       format: 'number',
@@ -430,6 +433,14 @@
     return `${sign}${text}${suffix}`;
   }
 
+  // Dark text on light fills, white text on dark fills
+  function getContrastColor (hex) {
+    const match = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
+    if (!match) return '#202124';
+    const [r, g, b] = match.slice(1).map(part => parseInt(part, 16) / 255);
+    return 0.299 * r + 0.587 * g + 0.114 * b > 0.6 ? '#202124' : '#ffffff';
+  }
+
   function formatAxisNumber (value) {
     return formatNumber(value, state.axis);
   }
@@ -648,7 +659,9 @@
     const showTooltips = state.display.tooltips;
     const labelSettings = state.labels;
     const showValueLabels = labelSettings.show;
-    const showTextLabels = Boolean(labelField) && labelSettings.showText;
+    const showBreakdownLabels = labelSettings.showBreakdown;
+    const showTotalLabels = labelSettings.showTotal;
+    const showTextLabels = Boolean(labelField);
     const labelFontSize = labelSettings.fontSize;
 
     // Which marks of one series get a label: all, the min and max, or the most recent.
@@ -662,11 +675,14 @@
       return index => index === min.index || index === max.index;
     };
 
-    const addLabel = (parent, text, x, yPosition, markColor, className = 'value-label') => {
-      const fill = labelSettings.colorMode === 'mark' && markColor ? markColor
-        : labelSettings.colorMode === 'custom' ? labelSettings.color
-          : className === 'text-label' ? '#202124' : '#3c4043';
-      const weight = labelSettings.bold || className === 'text-label' ? 600 : 400;
+    // options.inside: the label sits on top of the mark's fill, so it needs a contrasting color
+    const addLabel = (parent, text, x, yPosition, markColor, options = {}) => {
+      const isText = options.className === 'text-label';
+      const fill = labelSettings.colorMode === 'custom' ? labelSettings.color
+        : options.inside && markColor ? getContrastColor(markColor)
+          : labelSettings.colorMode === 'mark' && markColor ? markColor
+            : isText ? '#202124' : '#3c4043';
+      const weight = labelSettings.bold || isText ? 600 : 400;
       return addText(parent, text, {
         x,
         y: yPosition,
@@ -674,6 +690,8 @@
         style: `font-size:${labelFontSize}px;fill:${fill};font-weight:${weight}`
       });
     };
+
+    const labelInsideBar = labelSettings.position !== 'outside';
 
     // Label position on a bar running from startY (baseline side) to endY (value side)
     const barLabelY = (startY, endY) => {
@@ -691,7 +709,9 @@
 
     // The Color encoding splits the first bar measure into stacked or side-by-side member bars.
     const barFields = measureFields.filter(field => getSeries(field).mode === 'bar');
-    const primaryBar = colorField && colorMembers.length > 0 ? barFields[0] || null : null;
+    // The primary measure is the first bar measure; primaryBar is set only when Color splits it.
+    const primaryMeasure = barFields[0] || null;
+    const primaryBar = colorField && colorMembers.length > 0 ? primaryMeasure : null;
     const sideBySide = Boolean(primaryBar) && state.colorGroup.layout === 'side-by-side';
     const stackTotals = row => {
       const memberValues = [...getBreakdown(row, primaryBar).values()].map(item => item.value);
@@ -725,7 +745,7 @@
     const height = Math.max(220, chartElement.clientHeight - 8);
     const labelDepth = angle === 0 ? 24 : Math.min(height * 0.35, 16 + longestLabel * 6 * (angle === 45 ? 0.72 : 1));
     const margin = {
-      top: showTextLabels || showValueLabels ? 32 : 16,
+      top: showTextLabels || showValueLabels || showTotalLabels ? 32 : 16,
       right: 18,
       bottom: 16 + labelDepth + (categoryTitle ? 20 : 0),
       left: Math.max(40, 14 + Math.max(0, ...tickLabels.map(label => label.length)) * 6.5 + (valueTitle ? 22 : 0))
@@ -849,21 +869,35 @@
           stroke: sideBySide ? 'none' : '#fff',
           'stroke-width': 0.5
         }));
-        if (showValueLabels && sideBySide && shouldLabelMember.get(member)(categoryIndex)) {
-          addLabel(plot, formatLabel(item.value, item.label), left + width / 2, barLabelY(fromY, toY), getMemberColor(member));
+        if (showBreakdownLabels && shouldLabelMember.get(member)(categoryIndex)) {
+          const text = formatLabel(item.value, item.label);
+          if (sideBySide) {
+            addLabel(plot, text, left + width / 2, barLabelY(fromY, toY), getMemberColor(member), { inside: labelInsideBar });
+          } else if (Math.abs(fromY - toY) >= labelFontSize + 2) {
+            // Stacked segments are labelled in their middle; segments too thin for the text are skipped
+            addLabel(plot, text, left + width / 2, (fromY + toY) / 2 + labelFontSize / 3, getMemberColor(member), { inside: true });
+          }
         }
       });
-      // Stacked bars get one label for the total
-      if (showValueLabels && !sideBySide && shouldLabel.get(primaryBar.name)(categoryIndex)) {
-        const endY = positive !== 0 ? y(positive) : negative !== 0 ? y(negative) : zeroY;
-        addLabel(
-          plot,
-          formatLabel(getNumericValue(row, primaryBar), getLabel(row[primaryBar.name])),
-          barX(categoryIndex, barIndex) + barSpan(barIndex) / 2,
-          barLabelY(zeroY, endY),
-          getSeries(primaryBar).color
-        );
+
+      // Total above the stack, or above the tallest side-by-side bar
+      if (showTotalLabels && shouldLabel.get(primaryBar.name)(categoryIndex)) {
+        const memberValues = [...breakdown.values()].map(item => item.value);
+        const top = sideBySide ? Math.max(0, ...memberValues) : positive;
+        const bottom = sideBySide ? Math.min(0, ...memberValues) : negative;
+        drawTotalLabel(row, categoryIndex, barIndex, top !== 0 ? y(top) : bottom !== 0 ? y(bottom) : zeroY);
       }
+    };
+
+    const drawTotalLabel = (row, categoryIndex, barIndex, endY) => {
+      const upward = endY <= zeroY;
+      addLabel(
+        plot,
+        formatLabel(getNumericValue(row, primaryMeasure), getLabel(row[primaryMeasure.name])),
+        barX(categoryIndex, barIndex) + barSpan(barIndex) / 2,
+        upward ? endY - 4 : endY + labelFontSize + 2,
+        getSeries(primaryMeasure).color
+      );
     };
 
     chartRows.forEach((row, categoryIndex) => {
@@ -883,13 +917,17 @@
           fill: getSeries(field).color,
           rx: 1
         }));
-        if (showValueLabels && shouldLabel.get(field.name)(categoryIndex)) {
+        // Without a Color split, the primary total label replaces the primary mark label
+        if (field === primaryMeasure && showTotalLabels) {
+          if (shouldLabel.get(field.name)(categoryIndex)) drawTotalLabel(row, categoryIndex, barIndex, yValue);
+        } else if (showValueLabels && shouldLabel.get(field.name)(categoryIndex)) {
           addLabel(
             plot,
             formatLabel(value, getLabel(row[field.name])),
             barX(categoryIndex, barIndex) + barWidth / 2,
             barLabelY(zeroY, yValue),
-            getSeries(field).color
+            getSeries(field).color,
+            { inside: labelInsideBar }
           );
         }
       });
@@ -1026,7 +1064,7 @@
         // A numeric Text field follows the label number format too
         const textValue = getValue(row[labelField.name]);
         const text = typeof textValue === 'number' ? formatLabel(textValue, getLabel(row[labelField.name])) : getLabel(row[labelField.name]);
-        addLabel(plot, text, xCenter(categoryIndex), Math.max(12, top - (showValueLabels ? labelFontSize + 8 : 6)), null, 'text-label');
+        addLabel(plot, text, xCenter(categoryIndex), Math.max(12, top - (showValueLabels || showTotalLabels ? labelFontSize + 8 : 6)), null, { className: 'text-label' });
       });
     }
 

@@ -4,8 +4,12 @@
 // Every method returns, per point, an expected value and a normal range; points outside the range are anomalies.
 window.AnomalyDetect = (function () {
   const GRID = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9];
+  // Trend smoothing is kept low so one noisy step doesn't swing the trend
+  const TREND_GRID = [0.01, 0.05, 0.1, 0.2, 0.3];
   // Consistency constant: 1.4826 × MAD estimates the standard deviation of normally distributed data
   const MAD_SCALE = 1.4826;
+  // Automatic seasonality is used when the pattern explains at least this share of the detrended variation
+  const SEASON_STRENGTH = 0.4;
   const METHOD_LABELS = {
     zscore: 'Z-score',
     iqr: 'Interquartile range',
@@ -50,6 +54,15 @@ window.AnomalyDetect = (function () {
   function robustScale (values) {
     const center = median(values);
     return MAD_SCALE * median(values.map(value => Math.abs(value - center)));
+  }
+
+  // Least-squares line through [x, y] pairs
+  function lineThrough (pairs) {
+    const xMean = mean(pairs.map(([x]) => x));
+    const yMean = mean(pairs.map(([, y]) => y));
+    const denominator = sum(pairs.map(([x]) => (x - xMean) ** 2));
+    const slope = denominator > 0 ? sum(pairs.map(([x, y]) => (x - xMean) * (y - yMean))) / denominator : 0;
+    return { slope, intercept: yMean - slope * xMean };
   }
 
   // Least-squares slope per point, used for the trend in the summary
@@ -119,33 +132,31 @@ window.AnomalyDetect = (function () {
   }
 
   // Holt's linear exponential smoothing. Each point is compared with the one-step-ahead forecast from the
-  // points before it. Anomalies update the model with the forecast instead of the value, so a spike
-  // doesn't drag the expected line after it.
+  // points before it. Values outside the range update the model as if they were on its edge, so a spike
+  // barely drags the expected line, while a lasting shift is still followed.
   function runHolt (values, alpha, beta, sigma, k) {
+    // Start from a straight line through the first few values, so the early forecasts are sensible
+    const start = [];
+    values.forEach((value, index) => {
+      if (Number.isFinite(value) && start.length < 6) start.push([index, value]);
+    });
+    const line = lineThrough(start);
+    let trend = line.slope;
+    // Level just before the first value, so the first forecast is the line's value there
+    let level = line.intercept - line.slope;
+
     const results = [];
-    let level = null;
-    let trend = 0;
     let sse = 0;
-    let seen = 0;
     for (const value of values) {
+      const forecast = level + trend;
       if (!Number.isFinite(value)) {
         results.push(null);
-        if (level !== null) level += trend;
+        level = forecast;
         continue;
       }
-      // The first two values only set the starting level and trend
-      seen++;
-      if (seen <= 2) {
-        if (seen === 2) trend = value - level;
-        level = value;
-        results.push(null);
-        continue;
-      }
-      const forecast = level + trend;
       const error = value - forecast;
       sse += error * error;
-      const outlier = sigma !== null && Math.abs(error) > k * sigma;
-      const observed = outlier ? forecast : value;
+      const observed = sigma === null ? value : Math.min(forecast + k * sigma, Math.max(forecast - k * sigma, value));
       const previousLevel = level;
       level = alpha * observed + (1 - alpha) * forecast;
       trend = beta * (level - previousLevel) + (1 - beta) * trend;
@@ -157,14 +168,16 @@ window.AnomalyDetect = (function () {
   function smoothingBands (values, k) {
     let best = null;
     for (const alpha of GRID) {
-      for (const beta of GRID) {
+      for (const beta of TREND_GRID) {
         const run = runHolt(values, alpha, beta, null, k);
         if (!best || run.sse < best.sse) best = { alpha, beta, sse: run.sse };
       }
     }
-    // Residual spread from MAD, so the anomalies don't widen the range that is meant to catch them
+    // Residual spread from MAD, so the anomalies don't widen the range that is meant to catch them. The
+    // trimmed standard deviation is a floor for when most errors are almost zero and MAD collapses.
     const errors = runHolt(values, best.alpha, best.beta, null, k).results.filter(Boolean).map(item => item.error);
-    const sigma = robustScale(errors) || standardDeviation(errors);
+    const trimmed = [...errors].sort((a, b) => Math.abs(a) - Math.abs(b)).slice(0, Math.max(2, Math.ceil(errors.length * 0.9)));
+    const sigma = Math.max(robustScale(errors), standardDeviation(trimmed));
     const { results } = runHolt(values, best.alpha, best.beta, sigma, k);
     return results.map(item => item && {
       expected: item.forecast,
@@ -172,6 +185,60 @@ window.AnomalyDetect = (function () {
       high: item.forecast + k * sigma,
       scale: sigma
     });
+  }
+
+  // Classical additive decomposition. A centred moving average one season long gives the trend; the
+  // median detrended value at each season position (for example each month) gives its seasonal index.
+  // Strength = 1 − Var(remainder) / Var(detrended), from 0 (no pattern) to 1 (pure pattern).
+  function seasonality (values, positions, length) {
+    const n = values.length;
+    if (!(length > 1) || values.filter(Number.isFinite).length < 2 * length) return null;
+    const half = Math.floor(length / 2);
+    const even = length % 2 === 0;
+    const trend = values.map((_, index) => {
+      if (index < half || index >= n - half) return null;
+      let total = 0;
+      for (let j = -half; j <= half; j++) {
+        const neighbour = values[index + j];
+        if (!Number.isFinite(neighbour)) return null;
+        // An even-length centred average puts half weight on the two end points
+        total += even && Math.abs(j) === half ? neighbour / 2 : neighbour;
+      }
+      return total / length;
+    });
+    // The centred average stops half a season from each end. Extending it with a line through the
+    // nearest season of trend values gives every position a full set of years, so the median per
+    // position can outvote a one-off spike.
+    const known = trend.map((value, index) => [index, value]).filter(([, value]) => value !== null);
+    if (known.length < 2) return null;
+    const head = lineThrough(known.slice(0, length));
+    const tail = lineThrough(known.slice(-length));
+    const detrended = values.map((value, index) => {
+      if (!Number.isFinite(value)) return null;
+      const line = index < known[0][0] ? head : tail;
+      const base = trend[index] ?? line.intercept + line.slope * index;
+      return value - base;
+    });
+
+    const byPosition = Array.from({ length }, () => []);
+    detrended.forEach((value, index) => {
+      if (value !== null) byPosition[positions[index]].push(value);
+    });
+    if (byPosition.some(group => group.length === 0)) return null;
+    const raw = byPosition.map(median);
+    const center = mean(raw);
+    const indices = raw.map(value => value - center);
+
+    const present = [];
+    const remainders = [];
+    detrended.forEach((value, index) => {
+      if (value === null) return;
+      present.push(value);
+      remainders.push(value - indices[positions[index]]);
+    });
+    const total = standardDeviation(present) ** 2;
+    const strength = total > 0 ? Math.max(0, 1 - standardDeviation(remainders) ** 2 / total) : 0;
+    return { length, indices, strength };
   }
 
   function resolveMethod (method, isTimeSeries, count) {
@@ -185,33 +252,50 @@ window.AnomalyDetect = (function () {
   }
 
   // values: numbers in category order (null for missing).
-  // options: { method, sensitivity, threshold, direction, window, isTimeSeries }
+  // options: { method, sensitivity, threshold, direction, window, minChange (% of expected), isTimeSeries,
+  //            seasonality: 'auto' | 'on' | 'off', seasonLength, positions (season position of each value) }
   function detect (values, options) {
-    const present = values.filter(Number.isFinite);
+    let season = null;
+    if (options.isTimeSeries && options.seasonality !== 'off' && options.seasonLength > 1 && options.positions) {
+      season = seasonality(values, options.positions, options.seasonLength);
+      if (season) season.applied = options.seasonality === 'on' || season.strength >= SEASON_STRENGTH;
+    }
+    // With seasonality applied, detection runs on seasonally adjusted values and the pattern is added back
+    const seasonal = index => season?.applied ? season.indices[options.positions[index]] : 0;
+    const adjusted = values.map((value, index) => Number.isFinite(value) ? value - seasonal(index) : value);
+
+    const present = adjusted.filter(Number.isFinite);
     const method = resolveMethod(options.method, options.isTimeSeries, present.length);
     const k = getThreshold(method, options);
+    const base = { method, k, label: METHOD_LABELS[method], season };
     if (present.length < 4) {
-      return { method, k, label: METHOD_LABELS[method], points: values.map(() => null), error: 'Needs at least 4 values' };
+      return { ...base, points: values.map(() => null), error: 'Needs at least 4 values' };
     }
 
     let bands;
-    if (method === 'rolling') bands = rollingBands(values, k, options.window);
-    else if (method === 'smoothing') bands = smoothingBands(values, k);
-    else bands = values.map(globalBands(present, method, k));
+    if (method === 'rolling') bands = rollingBands(adjusted, k, options.window);
+    else if (method === 'smoothing') bands = smoothingBands(adjusted, k);
+    else bands = adjusted.map(globalBands(present, method, k));
 
     const points = values.map((value, index) => {
       const band = bands[index];
       if (!Number.isFinite(value) || !band) return null;
-      const deviation = value - band.expected;
+      const effect = seasonal(index);
+      const expected = band.expected + effect;
+      const low = band.low + effect;
+      const high = band.high + effect;
+      const deviation = value - expected;
       const score = band.scale > 0 ? deviation / band.scale : 0;
       let direction = null;
-      if (value > band.high && band.scale > 0) direction = 'high';
-      if (value < band.low && band.scale > 0) direction = 'low';
+      if (value > high && band.scale > 0) direction = 'high';
+      if (value < low && band.scale > 0) direction = 'low';
       if (direction && options.direction !== 'both' && options.direction !== direction) direction = null;
-      return { ...band, value, deviation, score, anomaly: direction };
+      // Statistically unusual but too small to matter
+      if (direction && options.minChange > 0 && Math.abs(deviation) < Math.abs(expected) * options.minChange / 100) direction = null;
+      return { expected, low, high, scale: band.scale, seasonal: effect, value, deviation, score, anomaly: direction };
     });
-    return { method, k, label: METHOD_LABELS[method], points };
+    return { ...base, points };
   }
 
-  return { detect, summarize, METHOD_LABELS, THRESHOLDS };
+  return { detect, summarize, METHOD_LABELS, THRESHOLDS, SEASON_STRENGTH };
 })();

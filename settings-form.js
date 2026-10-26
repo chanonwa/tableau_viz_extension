@@ -46,6 +46,7 @@ window.ComboSettingsForm = (function () {
   function build (container, payload, handlers) {
     const draft = JSON.parse(JSON.stringify(payload.state));
     const measures = payload.measures.map(measure => ({ ...measure }));
+    const colorMembers = payload.color ? payload.color.members.map(member => ({ ...member })) : [];
 
     function renderForm () {
       container.replaceChildren();
@@ -76,6 +77,24 @@ window.ComboSettingsForm = (function () {
           element('thead', {}, [element('tr', {}, ['Measure', 'Mark', 'Line style', 'Color'].map(text => element('th', { text })))]),
           element('tbody', {}, measureRows)
         ])]);
+
+      // Color encoding, following Tableau's Edit Colors dialog
+      let colorSection = null;
+      if (payload.color) {
+        const layout = select([['stacked', 'Stacked'], ['side-by-side', 'Side by side']], draft.colorGroup.layout, 'Bar layout');
+        layout.addEventListener('change', () => { draft.colorGroup.layout = layout.value; });
+        const memberRows = colorMembers.map(member => {
+          const color = element('input', { type: 'color', value: member.color, 'aria-label': `${member.name} color` });
+          color.addEventListener('input', () => { member.color = color.value; });
+          return element('label', { class: 'check color-member' }, [color, ` ${member.name}`]);
+        });
+        colorSection = section(`Color: ${payload.color.fieldName}`, [
+          element('p', { class: 'hint', text: 'Splits the first bar measure into one colored group per value.' }),
+          element('div', { class: 'row' }, [element('span', { text: 'Bars' }), layout]),
+          element('div', { class: 'group-title', text: 'Colors' }),
+          element('div', { class: 'check-list' }, memberRows)
+        ]);
+      }
 
       // Value axis, following Tableau's Edit Axis dialog
       const axis = draft.axis;
@@ -244,6 +263,7 @@ window.ComboSettingsForm = (function () {
           measure.lineStyle = 'solid';
           measure.color = measure.defaultColor;
         }
+        for (const member of colorMembers) member.color = member.defaultColor;
         renderForm();
       });
       const cancel = element('button', { type: 'button', class: 'secondary', text: 'Cancel' });
@@ -254,11 +274,17 @@ window.ComboSettingsForm = (function () {
         for (const measure of measures) {
           draft.series[measure.name] = { mode: measure.mode, lineStyle: measure.lineStyle, color: measure.color };
         }
+        // Keep colors chosen for members that are filtered out right now
+        for (const member of colorMembers) {
+          if (member.color === member.defaultColor) delete draft.colorGroup.colors[member.name];
+          else draft.colorGroup.colors[member.name] = member.color;
+        }
         handlers.onSave(draft);
       });
 
       container.append(
         measuresSection,
+        ...(colorSection ? [colorSection] : []),
         valueAxisSection,
         categoryAxisSection,
         displaySection,

@@ -33,6 +33,14 @@
       <fields max-count="50"/>
       <tooltip>One or more measures to show as bars or lines</tooltip>
     </encoding>
+    <encoding id="colorgroup">
+      <display-name>Color</display-name>
+      <role-spec>
+        <role-type>discrete-dimension</role-type>
+      </role-spec>
+      <fields max-count="1"/>
+      <tooltip>Dimension that splits the primary bar measure into colored groups</tooltip>
+    </encoding>
     <encoding id="label">
       <display-name>Text</display-name>
       <role-spec>

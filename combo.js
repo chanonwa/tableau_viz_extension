@@ -23,6 +23,8 @@
   const DEFAULT_STATE = {
     series: {},
     display: { valueLabels: false, tooltips: true },
+    // Field on the Color encoding splits the primary (first) bar measure
+    colorGroup: { layout: 'stacked', colors: {} },
     // Mirrors Tableau's Edit Axis options; empty strings mean "Automatic"
     axis: {
       title: '',
@@ -64,6 +66,7 @@
   const chartElement = document.getElementById('chart');
   const messageElement = document.getElementById('message');
   const seriesListElement = document.getElementById('series-list');
+  const colorLegendElement = document.getElementById('color-legend');
   const forecastNoteElement = document.getElementById('forecast-note');
   const tooltipElement = document.getElementById('tooltip');
   const settingsButton = document.getElementById('settings-button');
@@ -74,6 +77,10 @@
   let categoryField;
   let measureFields = [];
   let labelField;
+  let colorField;
+  let colorMembers = [];
+  // Combined row -> { measureName: Map(member -> { value, label }) }
+  const rowBreakdowns = new WeakMap();
   let tooltipContent = null;
   let state = mergeState({});
 
@@ -82,6 +89,11 @@
       series: { ...saved.series },
       display: { ...DEFAULT_STATE.display, ...saved.display },
       axis: { ...DEFAULT_STATE.axis, ...saved.axis },
+      colorGroup: {
+        ...DEFAULT_STATE.colorGroup,
+        ...saved.colorGroup,
+        colors: { ...saved.colorGroup?.colors }
+      },
       forecast: { ...DEFAULT_STATE.forecast, ...saved.forecast }
     };
   }
@@ -193,7 +205,35 @@
     return Number.isFinite(number) ? number : null;
   }
 
-  // Fields on Detail split a category into several rows; combine them into one row per category.
+  // Per measure, each Color member's value within one category
+  function getGroupBreakdown (group) {
+    const breakdown = {};
+    for (const field of measureFields) {
+      const members = new Map();
+      for (const row of group) {
+        const value = getNumericValue(row, field);
+        if (value === null) continue;
+        const member = getLabel(row[colorField.name]);
+        const existing = members.get(member);
+        members.set(member, existing
+          ? { value: existing.value + value, label: numberFormat.format(existing.value + value) }
+          : { value, label: getLabel(row[field.name]) });
+      }
+      breakdown[field.name] = members;
+    }
+    return breakdown;
+  }
+
+  function getBreakdown (row, field) {
+    return rowBreakdowns.get(row)?.[field.name] || new Map();
+  }
+
+  function getMemberColor (member) {
+    const index = Math.max(0, colorMembers.indexOf(member));
+    return state.colorGroup.colors[member] || COLORS[(measureFields.length + index) % COLORS.length];
+  }
+
+  // Fields on Detail or Color split a category into several rows; combine them into one row per category.
   // Measures are added up and other fields list their distinct values.
   function groupRowsByCategory (rows) {
     if (!categoryField) return rows;
@@ -203,28 +243,33 @@
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(row);
     }
-    if (groups.size === rows.length) return rows;
 
     const measureNames = new Set(measureFields.map(field => field.name));
     return [...groups.values()].map(group => {
-      if (group.length === 1) return group[0];
-      const combined = { ...group[0] };
-      for (const key of Object.keys(combined)) {
-        if (key === categoryField.name) continue;
-        if (measureNames.has(key)) {
-          const numbers = group.map(row => getNumericValue(row, { name: key })).filter(value => value !== null);
-          const total = numbers.reduce((sum, value) => sum + value, 0);
-          combined[key] = numbers.length > 0 ? { value: total, formattedValue: numberFormat.format(total) } : null;
-        } else {
-          const distinct = [...new Set(group.map(row => getLabel(row[key])))];
-          const text = distinct.length > 5
-            ? `${distinct.slice(0, 5).join(', ')}, … (${distinct.length} values)`
-            : distinct.join(', ');
-          combined[key] = { value: text, formattedValue: text };
-        }
-      }
+      const combined = combineRows(group, measureNames);
+      if (colorField) rowBreakdowns.set(combined, getGroupBreakdown(group));
       return combined;
     });
+  }
+
+  function combineRows (group, measureNames) {
+    if (group.length === 1) return group[0];
+    const combined = { ...group[0] };
+    for (const key of Object.keys(combined)) {
+      if (key === categoryField.name) continue;
+      if (measureNames.has(key)) {
+        const numbers = group.map(row => getNumericValue(row, { name: key })).filter(value => value !== null);
+        const total = numbers.reduce((sum, value) => sum + value, 0);
+        combined[key] = numbers.length > 0 ? { value: total, formattedValue: numberFormat.format(total) } : null;
+      } else {
+        const distinct = [...new Set(group.map(row => getLabel(row[key])))];
+        const text = distinct.length > 5
+          ? `${distinct.slice(0, 5).join(', ')}, … (${distinct.length} values)`
+          : distinct.join(', ');
+        combined[key] = { value: text, formattedValue: text };
+      }
+    }
+    return combined;
   }
 
   function hideTooltip () {
@@ -296,7 +341,17 @@
       measures: measureFields.map((field, index) => {
         const defaults = getDefaultSeries(index);
         return { name: field.name, ...getSeries(field), defaultMode: defaults.mode, defaultColor: defaults.color };
-      })
+      }),
+      color: colorField && colorMembers.length > 0
+        ? {
+            fieldName: colorField.name,
+            members: colorMembers.map((member, index) => ({
+              name: member,
+              color: getMemberColor(member),
+              defaultColor: COLORS[(measureFields.length + index) % COLORS.length]
+            }))
+          }
+        : null
     };
   }
 
@@ -475,7 +530,34 @@
     return { labels, series };
   }
 
+  function renderColorLegend () {
+    colorLegendElement.replaceChildren();
+    if (!colorField || colorMembers.length === 0) return;
+    const primaryBar = measureFields.find(field => getSeries(field).mode === 'bar');
+
+    const title = document.createElement('span');
+    title.className = 'legend-title';
+    title.textContent = primaryBar ? `${colorField.name} (${primaryBar.name})` : colorField.name;
+    colorLegendElement.appendChild(title);
+    if (!primaryBar) {
+      const note = document.createElement('span');
+      note.textContent = 'Color applies to bars; set a measure to Bar to use it.';
+      colorLegendElement.appendChild(note);
+      return;
+    }
+    for (const member of colorMembers) {
+      const item = document.createElement('span');
+      item.className = 'legend-item';
+      const swatch = document.createElement('span');
+      swatch.className = 'legend-swatch';
+      swatch.style.backgroundColor = getMemberColor(member);
+      item.append(swatch, member);
+      colorLegendElement.appendChild(item);
+    }
+  }
+
   function renderControls () {
+    renderColorLegend();
     seriesListElement.replaceChildren();
 
     measureFields.forEach(field => {
@@ -564,8 +646,25 @@
       ? forecast.series.flatMap(item => item.points.flatMap(point => showInterval ? [point.low, point.high] : [point.value]))
       : [];
 
+    // The Color encoding splits the first bar measure into stacked or side-by-side member bars.
+    const barFields = measureFields.filter(field => getSeries(field).mode === 'bar');
+    const primaryBar = colorField && colorMembers.length > 0 ? barFields[0] || null : null;
+    const sideBySide = Boolean(primaryBar) && state.colorGroup.layout === 'side-by-side';
+    const stackTotals = row => {
+      const memberValues = [...getBreakdown(row, primaryBar).values()].map(item => item.value);
+      return {
+        positive: memberValues.filter(value => value > 0).reduce((sum, value) => sum + value, 0),
+        negative: memberValues.filter(value => value < 0).reduce((sum, value) => sum + value, 0)
+      };
+    };
+    const colorValues = !primaryBar ? [] : chartRows.flatMap(row => {
+      if (sideBySide) return [...getBreakdown(row, primaryBar).values()].map(item => item.value);
+      const totals = stackTotals(row);
+      return [totals.positive, totals.negative];
+    });
+
     const axis = state.axis;
-    const scale = getValueScale([...values, ...forecastValues]);
+    const scale = getValueScale([...values, ...forecastValues, ...colorValues]);
     if (!scale) {
       showMessage('A logarithmic axis needs at least one value greater than zero.');
       return;
@@ -664,12 +763,67 @@
       class: 'axis-line'
     }));
 
-    const barFields = measureFields.filter(field => getSeries(field).mode === 'bar');
-    const barWidth = Math.min(36, groupWidth * 0.72 / Math.max(1, barFields.length));
-    const barX = (slotIndex, barIndex) => xCenter(slotIndex) - barWidth * barFields.length / 2 + barIndex * barWidth;
+    // Each bar measure takes one width unit; a side-by-side Color measure takes one unit per member.
+    const barUnits = barFields.map(field => field === primaryBar && sideBySide ? colorMembers.length : 1);
+    const totalUnits = barUnits.reduce((sum, units) => sum + units, 0);
+    const unitOffsets = barUnits.map((_, index) => barUnits.slice(0, index).reduce((sum, units) => sum + units, 0));
+    const barWidth = Math.min(36, groupWidth * 0.72 / Math.max(1, totalUnits));
+    const barX = (slotIndex, barIndex, subIndex = 0) =>
+      xCenter(slotIndex) - barWidth * totalUnits / 2 + (unitOffsets[barIndex] + subIndex) * barWidth;
+    const barSpan = barIndex => barUnits[barIndex] * barWidth;
+
+    const drawColorBars = (row, categoryIndex, barIndex) => {
+      const breakdown = getBreakdown(row, primaryBar);
+      let positive = 0;
+      let negative = 0;
+      colorMembers.forEach((member, subIndex) => {
+        const item = breakdown.get(member);
+        if (!item || (!sideBySide && item.value === 0)) return;
+        let from = 0;
+        let to = item.value;
+        if (!sideBySide) {
+          from = item.value >= 0 ? positive : negative;
+          to = from + item.value;
+          if (item.value >= 0) positive = to; else negative = to;
+        }
+        const fromY = from === 0 ? zeroY : y(from);
+        const toY = y(to);
+        const left = barX(categoryIndex, barIndex, sideBySide ? subIndex : 0);
+        const width = sideBySide ? barWidth : barSpan(barIndex);
+        plot.appendChild(createSvgElement('rect', {
+          x: left + 1,
+          y: Math.min(fromY, toY),
+          width: Math.max(1, width - 2),
+          height: Math.max(1, Math.abs(fromY - toY)),
+          fill: getMemberColor(member),
+          stroke: sideBySide ? 'none' : '#fff',
+          'stroke-width': 0.5
+        }));
+        if (showValueLabels && sideBySide) {
+          addText(plot, item.label, {
+            x: left + width / 2,
+            y: item.value >= 0 ? toY - 4 : toY + 12,
+            'text-anchor': 'middle',
+            class: 'value-label'
+          });
+        }
+      });
+      if (showValueLabels && !sideBySide) {
+        addText(plot, getLabel(row[primaryBar.name]), {
+          x: barX(categoryIndex, barIndex) + barSpan(barIndex) / 2,
+          y: (positive !== 0 ? y(positive) : zeroY) - 4,
+          'text-anchor': 'middle',
+          class: 'value-label'
+        });
+      }
+    };
 
     chartRows.forEach((row, categoryIndex) => {
       barFields.forEach((field, barIndex) => {
+        if (field === primaryBar) {
+          drawColorBars(row, categoryIndex, barIndex);
+          return;
+        }
         const value = getNumericValue(row, field);
         if (value === null) return;
         const yValue = y(value);
@@ -746,14 +900,15 @@
 
         if (mode === 'bar') {
           const barIndex = barFields.indexOf(field);
+          const span = barSpan(barIndex);
           slots.forEach(point => {
             const left = barX(point.slot, barIndex);
-            const center = left + barWidth / 2;
+            const center = left + span / 2;
             const yValue = y(point.value);
             plot.appendChild(createSvgElement('rect', {
               x: left + 1,
               y: Math.min(zeroY, yValue),
-              width: Math.max(1, barWidth - 2),
+              width: Math.max(1, span - 2),
               height: Math.max(1, Math.abs(zeroY - yValue)),
               fill: color,
               'fill-opacity': 0.4,
@@ -880,7 +1035,7 @@
     if (showTooltips) {
       const measureNames = new Set(measureFields.map(field => field.name));
       const extraFieldNames = Object.keys(chartRows[0]).filter(name =>
-        name !== categoryField.name && name !== labelField?.name && !measureNames.has(name)
+        name !== categoryField.name && name !== labelField?.name && name !== colorField?.name && !measureNames.has(name)
       );
       const getTooltipContent = index => {
         if (index >= chartRows.length) {
@@ -901,7 +1056,14 @@
         return {
           title: categories[index],
           rows: [
-            ...measureFields.map(field => ({ name: field.name, value: getLabel(row[field.name]), color: getSeries(field).color })),
+            ...measureFields.flatMap(field => [
+              { name: field.name, value: getLabel(row[field.name]), color: field === primaryBar ? null : getSeries(field).color },
+              ...(field === primaryBar
+                ? colorMembers
+                  .filter(member => getBreakdown(row, field).has(member))
+                  .map(member => ({ name: member, value: getBreakdown(row, field).get(member).label, color: getMemberColor(member) }))
+                : [])
+            ]),
             ...(labelField ? [{ name: labelField.name, value: getLabel(row[labelField.name]) }] : []),
             ...extraFieldNames.map(name => ({ name, value: getLabel(row[name]) }))
           ]
@@ -973,6 +1135,14 @@
     return encodings;
   }
 
+  // Members are sorted alphabetically, as in Tableau's default color legend
+  function setColorMembers (rows) {
+    colorMembers = colorField
+      ? [...new Set(rows.map(row => getLabel(row[colorField.name])))]
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+      : [];
+  }
+
   function updateFromTableau (worksheet) {
     const refresh = async () => {
       try {
@@ -983,6 +1153,8 @@
         categoryField = encodings.category?.[0];
         measureFields = encodings.measures || [];
         labelField = encodings.label?.[0];
+        colorField = encodings.colorgroup?.[0];
+        setColorMembers(rows);
         chartRows = sortRowsByDate(groupRowsByCategory(rows));
         render();
       } catch (error) {
@@ -1002,20 +1174,24 @@
       { name: 'Orders' },
       { name: 'Target' }
     ];
-    labelField = { name: 'Region' };
-    const regions = ['East', 'West', 'North', 'South'];
-    chartRows = Array.from({ length: 24 }, (_, index) => {
+    labelField = undefined;
+    colorField = { name: 'Region' };
+    // Each month is split across regions so the Color grouping can be previewed
+    const regions = [['East', 0.4], ['West', 0.35], ['North', 0.25]];
+    const rows = Array.from({ length: 24 }, (_, index) => {
       const season = Math.sin(index / 12 * 2 * Math.PI);
       const month = String(index % 12 + 1).padStart(2, '0');
-      return {
+      return regions.map(([region, share]) => ({
         Month: { value: `${2025 + Math.floor(index / 12)}-${month}-01` },
-        Sales: { value: Math.round(90 + index * 2.5 + season * 18) },
-        Profit: { value: Math.round(35 + index * 1.1 + season * 8) },
-        Orders: { value: Math.round(60 + index * 1.2 + season * 10) },
-        Target: { value: 75 + index * 2 },
-        Region: { value: regions[index % regions.length] }
-      };
-    });
+        Region: { value: region },
+        Sales: { value: Math.round((90 + index * 2.5 + season * 18) * share) },
+        Profit: { value: Math.round((35 + index * 1.1 + season * 8) * share) },
+        Orders: { value: Math.round((60 + index * 1.2 + season * 10) * share) },
+        Target: { value: Math.round((75 + index * 2) * share) }
+      }));
+    }).flat();
+    setColorMembers(rows);
+    chartRows = sortRowsByDate(groupRowsByCategory(rows));
     state.forecast.show = true;
     render();
   }

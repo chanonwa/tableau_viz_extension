@@ -28,6 +28,8 @@ Open the settings from the extension's dropdown on the Marks card (**Format Exte
 
 ## Other features
 
+- **Color**: put a dimension on the **Color** encoding to split the first bar measure into one colored group per value, with a legend above the chart. Choose stacked or side-by-side bars and edit each value's color under **Color** in the settings. Lines and other bar measures show category totals.
+
 - **Text**: put any field on the **Text** encoding to show its value above each category.
 - **Tooltip and Detail**: hover a category to see every measure, the Text field, and any fields on Tableau's Tooltip or Detail shelves. If Detail splits a category into several rows, the extension adds the measure values up and lists the distinct detail values.
 

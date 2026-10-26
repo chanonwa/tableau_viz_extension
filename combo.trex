@@ -14,9 +14,10 @@
       <display-name>Category</display-name>
       <role-spec>
         <role-type>discrete-dimension</role-type>
+        <role-type>continuous-dimension</role-type>
       </role-spec>
       <fields max-count="1"/>
-      <tooltip>Category for each data point</tooltip>
+      <tooltip>Category or date for each data point</tooltip>
     </encoding>
     <encoding id="measures">
       <display-name>Measures</display-name>
@@ -28,6 +29,17 @@
       </role-spec>
       <fields max-count="50"/>
       <tooltip>One or more measures to show as bars or lines</tooltip>
+    </encoding>
+    <encoding id="label">
+      <display-name>Text</display-name>
+      <role-spec>
+        <role-type>discrete-dimension</role-type>
+        <role-type>continuous-dimension</role-type>
+        <role-type>discrete-measure</role-type>
+        <role-type>continuous-measure</role-type>
+      </role-spec>
+      <fields max-count="1"/>
+      <tooltip>Field shown as a text label above each category</tooltip>
     </encoding>
   </worksheet-extension>
   <resources>

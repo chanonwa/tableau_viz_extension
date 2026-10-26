@@ -12,7 +12,7 @@ A local Tableau Viz Extension starter that displays one category and up to 50 nu
 
 2. In a browser, open `http://localhost:8765/`. Outside Tableau, the page shows sample data so you can preview the chart and try changing series types.
 3. In Tableau Desktop, open a worksheet and add the extension from `combo.trex` (use the Viz Extension option on the Marks card).
-4. Put one discrete field or date (discrete or continuous) on **Category** and one or more numeric measures on **Measures**. Click any series control above the chart to toggle it between bar and line, and use the adjacent selector to set its line pattern.
+4. Put one discrete field or date (discrete or continuous) on **Category** and one or more numeric measures on **Measures**. Change each measure's mark type (bar or line) and line style in **Format Extension**.
 
 The extension uses Tableau's summary data and refreshes when the worksheet data changes. The value axis is intentionally shared, so measures with very different scales may be hard to compare. Date categories are shown as month and year (for example "May 2026") and sorted oldest to newest.
 

@@ -327,12 +327,6 @@
     return { ...getDefaultSeries(index), ...state.series[field.name] };
   }
 
-  function updateSeries (field, changes) {
-    state.series[field.name] = { ...getSeries(field), ...changes };
-    saveState();
-    render();
-  }
-
   // Settings: the Tableau "Format Extension" dialog (Marks card), or an in-chart panel as a fallback.
   function getSettingsPayload () {
     return {
@@ -556,56 +550,33 @@
     }
   }
 
+  // Read-only measure legend; mark type and line style are changed in Format Extension.
   function renderControls () {
     renderColorLegend();
     seriesListElement.replaceChildren();
 
     measureFields.forEach(field => {
       const { mode, lineStyle, color } = getSeries(field);
-      const control = document.createElement('div');
-      control.className = 'series-control-wrap';
+      const item = document.createElement('span');
+      item.className = 'legend-item';
+      item.title = `${field.name}: ${mode === 'bar' ? 'Bar' : `${lineStyle} line`}. Change it in Format Extension.`;
 
-      const button = document.createElement('button');
-      button.className = 'series-control';
-      button.type = 'button';
-      button.setAttribute('aria-label', `${field.name}: ${mode}. Change chart type`);
+      const swatch = createSvgElement('svg', { width: 18, height: 10, 'aria-hidden': 'true' });
+      swatch.appendChild(mode === 'bar'
+        ? createSvgElement('rect', { x: 4, y: 0, width: 10, height: 10, rx: 2, fill: color })
+        : createSvgElement('line', {
+          x1: 1,
+          x2: 17,
+          y1: 5,
+          y2: 5,
+          stroke: color,
+          'stroke-width': 2.5,
+          'stroke-linecap': 'round',
+          'stroke-dasharray': LINE_STYLES[lineStyle] ? LINE_STYLES[lineStyle].split(' ').map(length => length / 2).join(' ') : 'none'
+        }));
 
-      const swatch = document.createElement('span');
-      swatch.setAttribute('aria-hidden', 'true');
-      swatch.style.width = '10px';
-      swatch.style.height = '10px';
-      swatch.style.flex = '0 0 auto';
-      swatch.style.borderRadius = mode === 'line' ? '50%' : '2px';
-      swatch.style.backgroundColor = color;
-
-      const name = document.createElement('span');
-      name.className = 'series-name';
-      name.textContent = field.name;
-
-      const modeLabel = document.createElement('span');
-      modeLabel.className = 'series-mode';
-      modeLabel.textContent = mode;
-
-      button.append(swatch, name, modeLabel);
-      button.addEventListener('click', () => updateSeries(field, { mode: mode === 'bar' ? 'line' : 'bar' }));
-
-      const styleSelect = document.createElement('select');
-      styleSelect.className = 'line-style';
-      styleSelect.setAttribute('aria-label', `${field.name} line style`);
-      styleSelect.disabled = mode !== 'line';
-      for (const style of Object.keys(LINE_STYLES)) {
-        const option = document.createElement('option');
-        option.value = style;
-        option.textContent = style === 'dash-dot'
-          ? 'Dash-dot'
-          : style.charAt(0).toUpperCase() + style.slice(1);
-        styleSelect.appendChild(option);
-      }
-      styleSelect.value = lineStyle;
-      styleSelect.addEventListener('change', () => updateSeries(field, { lineStyle: styleSelect.value }));
-
-      control.append(button, styleSelect);
-      seriesListElement.appendChild(control);
+      item.append(swatch, field.name);
+      seriesListElement.appendChild(item);
     });
   }
 

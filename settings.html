@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Combo Chart Settings</title>
+    <link rel="stylesheet" href="./settings.css">
+    <style>
+      body {
+        margin: 0;
+        padding: 12px 16px;
+        background: #fff;
+      }
+    </style>
+    <script defer src="./vendor/tableau.extensions.1.latest.min.js"></script>
+    <script defer src="./settings-form.js"></script>
+    <script defer>
+      document.addEventListener('DOMContentLoaded', () => {
+        const container = document.getElementById('form');
+        tableau.extensions.initializeDialogAsync()
+          .then(payload => {
+            ComboSettingsForm.build(container, JSON.parse(payload), {
+              onSave: state => tableau.extensions.ui.closeDialog(JSON.stringify(state)),
+              onCancel: () => tableau.extensions.ui.closeDialog('')
+            });
+          })
+          .catch(error => {
+            container.textContent = `Unable to open settings: ${error.message || error}`;
+          });
+      });
+    </script>
+  </head>
+  <body>
+    <div id="form" class="settings-form"></div>
+  </body>
+</html>

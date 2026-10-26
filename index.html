@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Multi-Measure Combo Chart</title>
+    <link rel="stylesheet" href="./settings.css">
     <style>
       :root {
         color: #202124;
@@ -22,6 +23,7 @@
       }
 
       body {
+        position: relative;
         display: flex;
         flex-direction: column;
         min-width: 320px;
@@ -48,188 +50,20 @@
       }
 
       #settings-button {
-        padding: 4px 10px;
-        border: 1px solid #dadce0;
+        padding: 2px 8px;
+        border: 1px solid transparent;
         border-radius: 4px;
-        background: #fff;
-        color: inherit;
+        background: none;
+        color: #5f6368;
         font: inherit;
-        font-size: 12px;
+        font-size: 16px;
         cursor: pointer;
       }
 
       #settings-button:hover,
-      #settings-button:focus-visible,
-      #settings-button[aria-expanded="true"] {
-        border-color: #5b6b7a;
+      #settings-button:focus-visible {
+        border-color: #dadce0;
         outline: none;
-      }
-
-      #settings-panel {
-        margin-bottom: 8px;
-        padding: 8px 10px;
-        border: 1px solid #dadce0;
-        border-radius: 4px;
-        background: #f8f9fa;
-      }
-
-      #settings-panel[hidden] {
-        display: none;
-      }
-
-      .settings-heading {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 6px;
-        font-size: 12px;
-        font-weight: 600;
-      }
-
-      #color-list {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px 16px;
-      }
-
-      .color-row {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        max-width: 280px;
-      }
-
-      .color-row input[type="color"] {
-        width: 28px;
-        height: 22px;
-        padding: 0;
-        border: 1px solid #dadce0;
-        border-radius: 3px;
-        background: #fff;
-        cursor: pointer;
-      }
-
-      .color-hex {
-        width: 70px;
-        padding: 2px 4px;
-        border: 1px solid #dadce0;
-        border-radius: 3px;
-        font: inherit;
-        font-size: 11px;
-      }
-
-      .text-button {
-        padding: 2px 6px;
-        border: 1px solid #dadce0;
-        border-radius: 3px;
-        background: #fff;
-        color: #5f6368;
-        font: inherit;
-        font-size: 11px;
-        cursor: pointer;
-      }
-
-      #forecast-controls {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 6px;
-        padding: 2px 0 4px;
-        color: #5f6368;
-        font-size: 12px;
-      }
-
-      .forecast-select {
-        max-width: 200px;
-      }
-
-      .forecast-hint {
-        font-size: 11px;
-      }
-
-      .forecast-area {
-        fill: #f1f3f4;
-      }
-
-      .settings-options {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 4px 16px;
-        margin-bottom: 8px;
-        font-size: 12px;
-      }
-
-      .settings-options label {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        cursor: pointer;
-      }
-
-      .hover-target {
-        fill: transparent;
-      }
-
-      .hover-target:hover {
-        fill: rgba(60, 64, 67, 0.06);
-      }
-
-      .value-label {
-        fill: #3c4043;
-        font-size: 10px;
-      }
-
-      .text-label {
-        fill: #202124;
-        font-size: 11px;
-        font-weight: 600;
-      }
-
-      #tooltip {
-        position: absolute;
-        z-index: 2;
-        max-width: 320px;
-        padding: 8px 10px;
-        border: 1px solid #dadce0;
-        border-radius: 4px;
-        background: #fff;
-        box-shadow: 0 2px 6px rgba(60, 64, 67, 0.25);
-        font-size: 12px;
-        pointer-events: none;
-      }
-
-      #tooltip[hidden] {
-        display: none;
-      }
-
-      .tooltip-title {
-        margin-bottom: 4px;
-        font-weight: 600;
-      }
-
-      .tooltip-row {
-        display: flex;
-        align-items: baseline;
-        gap: 6px;
-        line-height: 1.5;
-      }
-
-      .tooltip-swatch {
-        flex: 0 0 auto;
-        width: 8px;
-        height: 8px;
-        border-radius: 2px;
-      }
-
-      .tooltip-name {
-        color: #5f6368;
-      }
-
-      .tooltip-value {
-        margin-left: auto;
-        padding-left: 12px;
-        font-weight: 600;
-        text-align: right;
       }
 
       #series-list {
@@ -294,6 +128,15 @@
         text-transform: uppercase;
       }
 
+      #forecast-note {
+        color: #5f6368;
+        font-size: 11px;
+      }
+
+      #forecast-note:empty {
+        display: none;
+      }
+
       #chart {
         position: relative;
         flex: 1 1 auto;
@@ -337,36 +180,122 @@
         stroke: #9aa0a6;
         stroke-width: 1;
       }
+
+      .forecast-area {
+        fill: #f1f3f4;
+      }
+
+      .hover-target {
+        fill: transparent;
+      }
+
+      .hover-target:hover {
+        fill: rgba(60, 64, 67, 0.06);
+      }
+
+      .value-label {
+        fill: #3c4043;
+        font-size: 10px;
+      }
+
+      .text-label {
+        fill: #202124;
+        font-size: 11px;
+        font-weight: 600;
+      }
+
+      #tooltip {
+        position: absolute;
+        z-index: 2;
+        max-width: 340px;
+        padding: 8px 10px;
+        border: 1px solid #dadce0;
+        border-radius: 4px;
+        background: #fff;
+        box-shadow: 0 2px 6px rgba(60, 64, 67, 0.25);
+        font-size: 12px;
+        pointer-events: none;
+      }
+
+      #tooltip[hidden] {
+        display: none;
+      }
+
+      .tooltip-title {
+        margin-bottom: 4px;
+        font-weight: 600;
+      }
+
+      .tooltip-row {
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
+        line-height: 1.5;
+      }
+
+      .tooltip-swatch {
+        flex: 0 0 auto;
+        width: 8px;
+        height: 8px;
+        border-radius: 2px;
+      }
+
+      .tooltip-name {
+        color: #5f6368;
+      }
+
+      .tooltip-value {
+        margin-left: auto;
+        padding-left: 12px;
+        font-weight: 600;
+        text-align: right;
+      }
+
+      #settings-overlay {
+        position: absolute;
+        inset: 0;
+        z-index: 3;
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        padding: 16px;
+        overflow-y: auto;
+        background: rgba(32, 33, 36, 0.35);
+      }
+
+      #settings-overlay[hidden] {
+        display: none;
+      }
+
+      #settings-overlay .settings-form {
+        width: 100%;
+        max-width: 560px;
+        padding: 12px 16px;
+        border-radius: 6px;
+        background: #fff;
+        box-shadow: 0 4px 16px rgba(32, 33, 36, 0.3);
+      }
     </style>
     <script defer src="./vendor/tableau.extensions.1.latest.min.js"></script>
+    <script defer src="./forecast.js"></script>
+    <script defer src="./settings-form.js"></script>
     <script defer src="./combo.js"></script>
   </head>
   <body>
     <header>
       <div class="title-row">
         <h1>Multi-Measure Combo Chart</h1>
-        <button id="settings-button" type="button" aria-expanded="false" aria-controls="settings-panel">⚙ Settings</button>
-      </div>
-      <div id="settings-panel" hidden>
-        <div class="settings-heading">
-          <span>Display</span>
-        </div>
-        <div class="settings-options">
-          <label><input id="show-value-labels" type="checkbox"> Show measure values on marks</label>
-          <label><input id="show-tooltips" type="checkbox" checked> Show tooltips</label>
-        </div>
-        <div class="settings-heading">
-          <span>Measure colors</span>
-          <button id="reset-colors" class="text-button" type="button">Reset colors</button>
-        </div>
-        <div id="color-list"></div>
+        <button id="settings-button" type="button" title="Settings" aria-label="Settings">⚙</button>
       </div>
       <div id="series-list" aria-label="Series chart types and line styles"></div>
-      <div id="forecast-controls" aria-label="Forecast settings"></div>
+      <div id="forecast-note" role="status"></div>
     </header>
     <main id="chart" aria-label="Combo chart">
       <div id="message" role="status" hidden></div>
       <div id="tooltip" role="tooltip" hidden></div>
     </main>
+    <div id="settings-overlay" hidden>
+      <div id="settings-form" class="settings-form" role="dialog" aria-label="Chart settings"></div>
+    </div>
   </body>
 </html>

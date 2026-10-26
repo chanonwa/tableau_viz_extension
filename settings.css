@@ -1,0 +1,155 @@
+.settings-form {
+  color: #202124;
+  font: 13px "Segoe UI", Arial, sans-serif;
+}
+
+.settings-section {
+  margin: 0 0 12px;
+  padding: 8px 12px 10px;
+  border: 1px solid #dadce0;
+  border-radius: 4px;
+}
+
+.settings-section legend {
+  padding: 0 4px;
+  font-weight: 600;
+}
+
+.settings-form select,
+.settings-form .number-input {
+  padding: 3px 4px;
+  border: 1px solid #dadce0;
+  border-radius: 3px;
+  background: #fff;
+  font: inherit;
+  font-size: 12px;
+}
+
+.settings-form select:disabled,
+.settings-form input:disabled {
+  opacity: 0.5;
+}
+
+.settings-form .number-input {
+  width: 56px;
+}
+
+.settings-form input[type="text"] {
+  padding: 3px 6px;
+  border: 1px solid #dadce0;
+  border-radius: 3px;
+  font: inherit;
+  font-size: 12px;
+}
+
+.settings-form .text-input {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.settings-form .number-text {
+  width: 90px;
+}
+
+.settings-form .symbol-text {
+  width: 40px;
+}
+
+.settings-form input[type="color"] {
+  width: 32px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid #dadce0;
+  border-radius: 3px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.measure-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.measure-table th {
+  padding: 2px 6px 4px 0;
+  color: #5f6368;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.measure-table td {
+  padding: 3px 6px 3px 0;
+}
+
+.measure-name {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-form .check {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 3px 0;
+  cursor: pointer;
+}
+
+.settings-form .check.strong {
+  font-weight: 600;
+}
+
+.settings-form .check-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 16px;
+}
+
+.settings-form .row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 3px 0;
+}
+
+.settings-form .group-title {
+  margin: 10px 0 2px;
+  color: #5f6368;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.settings-form .hint {
+  margin: 0;
+  color: #5f6368;
+}
+
+.settings-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-buttons .spacer {
+  flex: 1 1 auto;
+}
+
+.settings-buttons button {
+  padding: 5px 14px;
+  border: 1px solid #dadce0;
+  border-radius: 4px;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.settings-buttons button.primary {
+  border-color: #1a73e8;
+  background: #1a73e8;
+  color: #fff;
+}

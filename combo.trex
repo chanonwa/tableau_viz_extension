@@ -10,6 +10,9 @@
       <url>http://localhost:8765/index.html</url>
     </source-location>
     <icon/>
+    <context-menu>
+      <configure-context-menu-item/>
+    </context-menu>
     <encoding id="category">
       <display-name>Category</display-name>
       <role-spec>

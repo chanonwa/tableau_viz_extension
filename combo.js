@@ -20,33 +20,91 @@
     dotted: '2 4',
     'dash-dot': '8 4 2 4'
   };
-  const FORECAST_PERIOD_OPTIONS = [1, 2, 3, 6, 12];
-  // z-score for an 80% prediction interval
-  const FORECAST_Z = 1.2816;
+  const DEFAULT_STATE = {
+    series: {},
+    display: { valueLabels: false, tooltips: true },
+    // Mirrors Tableau's Edit Axis options; empty strings mean "Automatic"
+    axis: {
+      title: '',
+      showTitle: true,
+      rangeMin: '',
+      rangeMax: '',
+      includeZero: true,
+      reversed: false,
+      logarithmic: false,
+      ticks: 'auto',
+      tickInterval: '',
+      gridLines: true,
+      format: 'auto',
+      decimals: 0,
+      units: 'none',
+      currencySymbol: '$',
+      categoryTitle: '',
+      showCategoryTitle: false,
+      labelRotation: 'auto'
+    },
+    forecast: {
+      show: false,
+      // null = every measure, as in Tableau
+      measures: null,
+      length: 'auto',
+      periods: 6,
+      ignoreLast: 0,
+      model: 'auto',
+      trend: 'additive',
+      season: 'none',
+      showInterval: true,
+      interval: 95
+    }
+  };
+  const SETTINGS_KEY = 'comboChartState';
   const numberFormat = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
+  const inTableau = Boolean(window.tableau?.extensions) && window.parent !== window;
+
   const chartElement = document.getElementById('chart');
   const messageElement = document.getElementById('message');
   const seriesListElement = document.getElementById('series-list');
-  const forecastControlsElement = document.getElementById('forecast-controls');
-  const settingsButton = document.getElementById('settings-button');
-  const settingsPanel = document.getElementById('settings-panel');
-  const colorListElement = document.getElementById('color-list');
-  const resetColorsButton = document.getElementById('reset-colors');
-  const showValueLabelsInput = document.getElementById('show-value-labels');
-  const showTooltipsInput = document.getElementById('show-tooltips');
+  const forecastNoteElement = document.getElementById('forecast-note');
   const tooltipElement = document.getElementById('tooltip');
+  const settingsButton = document.getElementById('settings-button');
+  const settingsOverlay = document.getElementById('settings-overlay');
+  const settingsFormElement = document.getElementById('settings-form');
 
   let chartRows = [];
   let categoryField;
   let measureFields = [];
   let labelField;
   let tooltipContent = null;
-  const seriesModes = new Map();
-  const lineStyles = new Map();
-  const seriesColors = new Map();
-  // undefined = first measure, '' = no forecast
-  let forecastMeasure;
-  let forecastPeriods = 3;
+  let state = mergeState({});
+
+  function mergeState (saved) {
+    return {
+      series: { ...saved.series },
+      display: { ...DEFAULT_STATE.display, ...saved.display },
+      axis: { ...DEFAULT_STATE.axis, ...saved.axis },
+      forecast: { ...DEFAULT_STATE.forecast, ...saved.forecast }
+    };
+  }
+
+  function loadState () {
+    try {
+      const saved = tableau.extensions.settings.get(SETTINGS_KEY);
+      if (saved) state = mergeState(JSON.parse(saved));
+    } catch (error) {
+      console.warn('Unable to load saved settings', error);
+    }
+  }
+
+  // Saved settings travel with the workbook.
+  async function saveState () {
+    if (!inTableau) return;
+    try {
+      tableau.extensions.settings.set(SETTINGS_KEY, JSON.stringify(state));
+      await tableau.extensions.settings.saveAsync();
+    } catch (error) {
+      console.warn('Unable to save settings', error);
+    }
+  }
 
   function showMessage (message) {
     hideTooltip();
@@ -215,143 +273,213 @@
     tooltipElement.style.top = `${Math.max(0, top)}px`;
   }
 
-  function getColor (field) {
+  function getDefaultSeries (index) {
+    return { mode: index === 0 ? 'bar' : 'line', lineStyle: 'solid', color: COLORS[index % COLORS.length] };
+  }
+
+  function getSeries (field) {
     const index = Math.max(0, measureFields.findIndex(measure => measure.name === field.name));
-    return seriesColors.get(field.name) || COLORS[index % COLORS.length];
+    return { ...getDefaultSeries(index), ...state.series[field.name] };
   }
 
-  // Rebuilt only when the panel opens or the measures change, so an open color picker is not destroyed mid-edit.
-  function renderSettings () {
-    colorListElement.replaceChildren();
-    if (measureFields.length === 0) {
-      colorListElement.textContent = 'Add measures to change their colors.';
-      return;
-    }
-
-    measureFields.forEach(field => {
-      const row = document.createElement('label');
-      row.className = 'color-row';
-
-      const picker = document.createElement('input');
-      picker.type = 'color';
-      picker.value = getColor(field);
-      picker.setAttribute('aria-label', `${field.name} color`);
-
-      const hex = document.createElement('input');
-      hex.type = 'text';
-      hex.className = 'color-hex';
-      hex.value = picker.value;
-      hex.maxLength = 7;
-      hex.setAttribute('aria-label', `${field.name} hex color`);
-
-      const name = document.createElement('span');
-      name.className = 'series-name';
-      name.textContent = field.name;
-
-      picker.addEventListener('input', () => {
-        seriesColors.set(field.name, picker.value);
-        hex.value = picker.value;
-        render();
-      });
-      hex.addEventListener('change', () => {
-        const value = hex.value.trim().startsWith('#') ? hex.value.trim() : `#${hex.value.trim()}`;
-        if (/^#[0-9a-f]{6}$/i.test(value)) {
-          seriesColors.set(field.name, value.toLowerCase());
-          picker.value = value.toLowerCase();
-          render();
-        }
-        hex.value = picker.value;
-      });
-
-      row.append(picker, hex, name);
-      colorListElement.appendChild(row);
-    });
-  }
-
-  settingsButton.addEventListener('click', () => {
-    const open = settingsPanel.hidden;
-    settingsPanel.hidden = !open;
-    settingsButton.setAttribute('aria-expanded', String(open));
-    if (open) renderSettings();
+  function updateSeries (field, changes) {
+    state.series[field.name] = { ...getSeries(field), ...changes };
+    saveState();
     render();
-  });
-
-  resetColorsButton.addEventListener('click', () => {
-    seriesColors.clear();
-    renderSettings();
-    render();
-  });
-
-  showValueLabelsInput.addEventListener('change', render);
-  showTooltipsInput.addEventListener('change', render);
-
-  function getForecastDates () {
-    if (!categoryField || chartRows.length < 3) return null;
-    const dates = chartRows.map(row => getCategoryDate(row[categoryField.name]));
-    if (dates.some(date => date === null)) return null;
-
-    const monthIndex = date => date.getUTCFullYear() * 12 + date.getUTCMonth();
-    const last = dates[dates.length - 1];
-    const step = monthIndex(last) - monthIndex(dates[dates.length - 2]);
-    if (step <= 0) return null;
-
-    return Array.from({ length: forecastPeriods }, (_, index) =>
-      new Date(Date.UTC(last.getUTCFullYear(), last.getUTCMonth() + step * (index + 1), 1))
-    );
   }
 
-  function getForecastField () {
-    if (forecastMeasure === '') return null;
-    return measureFields.find(field => field.name === forecastMeasure) || measureFields[0] || null;
-  }
-
-  // Least-squares linear trend over the visible points, with an 80% prediction interval.
-  function getForecast () {
-    const field = getForecastField();
-    const dates = getForecastDates();
-    if (!field || !dates) return null;
-
-    const points = chartRows
-      .map((row, index) => ({ x: index, y: getNumericValue(row, field) }))
-      .filter(point => point.y !== null);
-    const n = points.length;
-    if (n < 3) return null;
-
-    const meanX = points.reduce((sum, point) => sum + point.x, 0) / n;
-    const meanY = points.reduce((sum, point) => sum + point.y, 0) / n;
-    const sxx = points.reduce((sum, point) => sum + (point.x - meanX) ** 2, 0);
-    const slope = points.reduce((sum, point) => sum + (point.x - meanX) * (point.y - meanY), 0) / sxx;
-    const intercept = meanY - slope * meanX;
-    const residualSd = Math.sqrt(
-      points.reduce((sum, point) => sum + (point.y - intercept - slope * point.x) ** 2, 0) / (n - 2)
-    );
-
+  // Settings: the Tableau "Format Extension" dialog (Marks card), or an in-chart panel as a fallback.
+  function getSettingsPayload () {
     return {
-      field,
-      anchor: points[n - 1],
-      points: dates.map((date, index) => {
-        const x = chartRows.length + index;
-        const value = intercept + slope * x;
-        const margin = FORECAST_Z * residualSd * Math.sqrt(1 + 1 / n + (x - meanX) ** 2 / sxx);
-        return { x, label: formatMonth(date), value, low: value - margin, high: value + margin };
+      state,
+      defaultState: mergeState({}),
+      measures: measureFields.map((field, index) => {
+        const defaults = getDefaultSeries(index);
+        return { name: field.name, ...getSeries(field), defaultMode: defaults.mode, defaultColor: defaults.color };
       })
     };
   }
 
-  function getSeriesMode (field, index) {
-    if (!seriesModes.has(field.name)) {
-      seriesModes.set(field.name, index === 0 ? 'bar' : 'line');
+  function applySettings (newState) {
+    state = mergeState(newState);
+    saveState();
+    render();
+  }
+
+  function openSettingsPanel () {
+    ComboSettingsForm.build(settingsFormElement, getSettingsPayload(), {
+      onSave: newState => {
+        settingsOverlay.hidden = true;
+        applySettings(newState);
+      },
+      onCancel: () => { settingsOverlay.hidden = true; }
+    });
+    settingsOverlay.hidden = false;
+  }
+
+  async function openSettings () {
+    if (!inTableau) {
+      openSettingsPanel();
+      return;
     }
-    return seriesModes.get(field.name);
+    try {
+      const url = new URL('settings.html', window.location.href).href;
+      const result = await tableau.extensions.ui.displayDialogAsync(url, JSON.stringify(getSettingsPayload()), {
+        width: 620,
+        height: 760
+      });
+      if (result) applySettings(JSON.parse(result));
+    } catch (error) {
+      if (error?.errorCode === tableau.ErrorCodes.DialogClosedByUser) return;
+      console.warn('Settings dialog unavailable, using the in-chart panel', error);
+      openSettingsPanel();
+    }
+  }
+
+  settingsButton.addEventListener('click', openSettings);
+
+  function parseNumber (text) {
+    if (text == null || String(text).trim() === '') return null;
+    const number = Number(text);
+    return Number.isFinite(number) ? number : null;
+  }
+
+  function formatAxisNumber (value) {
+    const axis = state.axis;
+    if (axis.format === 'auto') return numberFormat.format(value);
+    const [divisor, suffix] = {
+      thousands: [1e3, 'K'],
+      millions: [1e6, 'M'],
+      billions: [1e9, 'B']
+    }[axis.format === 'percent' ? 'none' : axis.units] || [1, ''];
+    const scaled = axis.format === 'percent' ? value * 100 : value / divisor;
+    const text = new Intl.NumberFormat(undefined, {
+      minimumFractionDigits: axis.decimals,
+      maximumFractionDigits: axis.decimals
+    }).format(Math.abs(scaled));
+    const sign = scaled < 0 && text.replace(/[0.,\s]/g, '') !== '' ? '-' : '';
+    if (axis.format === 'percent') return `${sign}${text}%`;
+    if (axis.format === 'currency') return `${sign}${axis.currencySymbol}${text}${suffix}`;
+    return `${sign}${text}${suffix}`;
+  }
+
+  function niceStep (rawStep) {
+    if (!(rawStep > 0)) return 1;
+    const magnitude = 10 ** Math.floor(Math.log10(rawStep));
+    const fraction = rawStep / magnitude;
+    return (fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 5 ? 5 : 10) * magnitude;
+  }
+
+  // Works out the value axis range and tick positions from the data and the axis settings.
+  function getValueScale (values) {
+    const axis = state.axis;
+    const fixedMin = parseNumber(axis.rangeMin);
+    const fixedMax = parseNumber(axis.rangeMax);
+
+    if (axis.logarithmic) {
+      const positives = values.filter(value => value > 0);
+      if (positives.length === 0) return null;
+      const min = fixedMin > 0 ? fixedMin : 10 ** Math.floor(Math.log10(Math.min(...positives)));
+      let max = fixedMax > 0 ? fixedMax : 10 ** Math.ceil(Math.log10(Math.max(...positives)));
+      if (max <= min) max = min * 10;
+      const ticks = [];
+      if (axis.ticks !== 'none') {
+        const decades = Math.log10(max / min);
+        const multiples = decades <= 2 ? [1, 2, 5] : [1];
+        for (let power = Math.floor(Math.log10(min)); power <= Math.ceil(Math.log10(max)); power++) {
+          for (const multiple of multiples) {
+            const tick = Number((multiple * 10 ** power).toPrecision(12));
+            if (tick >= min && tick <= max) ticks.push(tick);
+          }
+        }
+      }
+      return { min, max, log: true, ticks, baseline: min };
+    }
+
+    let low = axis.includeZero ? Math.min(0, ...values) : Math.min(...values);
+    let high = axis.includeZero ? Math.max(0, ...values) : Math.max(...values);
+    if (fixedMin !== null) low = fixedMin;
+    if (fixedMax !== null) high = fixedMax;
+    if (high <= low) high = low + (Math.abs(low) * 0.1 || 1);
+
+    const fixedInterval = parseNumber(axis.tickInterval);
+    const interval = axis.ticks === 'fixed' && fixedInterval > 0 ? fixedInterval : niceStep((high - low) / 5);
+    const min = fixedMin !== null ? fixedMin : Math.floor(low / interval) * interval;
+    let max = fixedMax !== null ? fixedMax : Math.ceil(high / interval) * interval;
+    if (max <= min) max = min + interval;
+
+    const ticks = [];
+    if (axis.ticks !== 'none' && (max - min) / interval <= 100) {
+      const first = Math.ceil(min / interval - 1e-9);
+      for (let index = first; index * interval <= max + interval * 1e-9; index++) {
+        ticks.push(Number((index * interval).toPrecision(12)));
+      }
+    }
+    return { min, max, log: false, ticks, baseline: Math.min(Math.max(0, min), max) };
+  }
+
+  function getDateInfo () {
+    if (!categoryField || chartRows.length < 3) return null;
+    const dates = chartRows.map(row => getCategoryDate(row[categoryField.name]));
+    if (dates.some(date => date === null)) return null;
+    const monthIndex = date => date.getUTCFullYear() * 12 + date.getUTCMonth();
+    const step = monthIndex(dates[dates.length - 1]) - monthIndex(dates[dates.length - 2]);
+    return step > 0 ? { dates, step } : null;
+  }
+
+  function getForecast () {
+    const settings = state.forecast;
+    forecastNoteElement.textContent = '';
+    if (!settings.show) return null;
+
+    const dateInfo = getDateInfo();
+    if (!dateInfo) {
+      forecastNoteElement.textContent = 'Forecast needs a month, quarter, or year date on Category with at least 3 points.';
+      return null;
+    }
+
+    const seasonLength = dateInfo.step === 1 ? 12 : dateInfo.step === 3 ? 4 : 0;
+    const periods = settings.length === 'auto' ? (seasonLength || 3) : settings.periods;
+    const ignoreLast = Math.max(0, Math.min(settings.ignoreLast, chartRows.length - 3));
+    const fields = measureFields.filter(field => settings.measures === null || settings.measures.includes(field.name));
+    const errors = [];
+
+    const series = fields.map(field => {
+      const values = chartRows
+        .slice(0, chartRows.length - ignoreLast)
+        .map(row => getNumericValue(row, field))
+        .filter(value => value !== null);
+      const result = ComboForecast.forecast(values, {
+        model: settings.model,
+        trend: settings.trend,
+        season: settings.season,
+        seasonLength,
+        horizon: ignoreLast + periods,
+        interval: settings.interval
+      });
+      if (result.error) {
+        errors.push(`${field.name}: ${result.error}`);
+        return null;
+      }
+      // Forecasts for ignored periods sit under actual data, so only the future periods are drawn.
+      return { field, description: result.description, points: result.points.slice(ignoreLast) };
+    }).filter(Boolean);
+
+    if (errors.length > 0) forecastNoteElement.textContent = `No forecast for ${errors.join('; ')}.`;
+    if (series.length === 0) return null;
+
+    const last = dateInfo.dates[dateInfo.dates.length - 1];
+    const labels = Array.from({ length: periods }, (_, index) =>
+      formatMonth(new Date(Date.UTC(last.getUTCFullYear(), last.getUTCMonth() + dateInfo.step * (index + 1), 1)))
+    );
+    return { labels, series };
   }
 
   function renderControls () {
     seriesListElement.replaceChildren();
 
-    measureFields.forEach((field, index) => {
-      const mode = getSeriesMode(field, index);
-      if (!lineStyles.has(field.name)) lineStyles.set(field.name, 'solid');
-      const lineStyle = lineStyles.get(field.name);
+    measureFields.forEach(field => {
+      const { mode, lineStyle, color } = getSeries(field);
       const control = document.createElement('div');
       control.className = 'series-control-wrap';
 
@@ -366,7 +494,7 @@
       swatch.style.height = '10px';
       swatch.style.flex = '0 0 auto';
       swatch.style.borderRadius = mode === 'line' ? '50%' : '2px';
-      swatch.style.backgroundColor = getColor(field);
+      swatch.style.backgroundColor = color;
 
       const name = document.createElement('span');
       name.className = 'series-name';
@@ -377,10 +505,7 @@
       modeLabel.textContent = mode;
 
       button.append(swatch, name, modeLabel);
-      button.addEventListener('click', () => {
-        seriesModes.set(field.name, mode === 'bar' ? 'line' : 'bar');
-        render();
-      });
+      button.addEventListener('click', () => updateSeries(field, { mode: mode === 'bar' ? 'line' : 'bar' }));
 
       const styleSelect = document.createElement('select');
       styleSelect.className = 'line-style';
@@ -395,68 +520,16 @@
         styleSelect.appendChild(option);
       }
       styleSelect.value = lineStyle;
-      styleSelect.addEventListener('change', () => {
-        lineStyles.set(field.name, styleSelect.value);
-        render();
-      });
+      styleSelect.addEventListener('change', () => updateSeries(field, { lineStyle: styleSelect.value }));
 
       control.append(button, styleSelect);
       seriesListElement.appendChild(control);
     });
   }
 
-  function renderForecastControls () {
-    forecastControlsElement.replaceChildren();
-    if (measureFields.length === 0) return;
-    const available = getForecastDates() !== null;
-
-    const label = document.createElement('span');
-    label.textContent = 'Forecast';
-
-    const measureSelect = document.createElement('select');
-    measureSelect.className = 'line-style forecast-select';
-    measureSelect.setAttribute('aria-label', 'Measure to forecast');
-    measureSelect.disabled = !available;
-    for (const [value, text] of [['', 'None'], ...measureFields.map(field => [field.name, field.name])]) {
-      const option = document.createElement('option');
-      option.value = value;
-      option.textContent = text;
-      measureSelect.appendChild(option);
-    }
-    measureSelect.value = getForecastField()?.name ?? '';
-    measureSelect.addEventListener('change', () => {
-      forecastMeasure = measureSelect.value;
-      render();
-    });
-
-    const periodsSelect = document.createElement('select');
-    periodsSelect.className = 'line-style';
-    periodsSelect.setAttribute('aria-label', 'Periods to forecast');
-    periodsSelect.disabled = !available || !getForecastField();
-    for (const periods of FORECAST_PERIOD_OPTIONS) {
-      const option = document.createElement('option');
-      option.value = String(periods);
-      option.textContent = `${periods} period${periods === 1 ? '' : 's'}`;
-      periodsSelect.appendChild(option);
-    }
-    periodsSelect.value = String(forecastPeriods);
-    periodsSelect.addEventListener('change', () => {
-      forecastPeriods = Number(periodsSelect.value);
-      render();
-    });
-
-    forecastControlsElement.append(label, measureSelect, periodsSelect);
-    if (!available) {
-      const hint = document.createElement('span');
-      hint.className = 'forecast-hint';
-      hint.textContent = 'Needs a month, quarter, or year date on Category with at least 3 points.';
-      forecastControlsElement.appendChild(hint);
-    }
-  }
-
   function render () {
     renderControls();
-    renderForecastControls();
+    forecastNoteElement.textContent = '';
 
     if (!categoryField) {
       showMessage('Add one discrete field to Category and one or more measures to Measures.');
@@ -484,24 +557,48 @@
     hideTooltip();
     chartElement.querySelector('svg')?.remove();
 
-    const showValueLabels = showValueLabelsInput.checked;
+    const { valueLabels: showValueLabels, tooltips: showTooltips } = state.display;
+    const forecast = getForecast();
+    const showInterval = state.forecast.showInterval;
+    const forecastValues = forecast
+      ? forecast.series.flatMap(item => item.points.flatMap(point => showInterval ? [point.low, point.high] : [point.value]))
+      : [];
+
+    const axis = state.axis;
+    const scale = getValueScale([...values, ...forecastValues]);
+    if (!scale) {
+      showMessage('A logarithmic axis needs at least one value greater than zero.');
+      return;
+    }
+    const tickLabels = scale.ticks.map(formatAxisNumber);
+    const labels = [...categories, ...(forecast ? forecast.labels : [])];
+    const valueTitle = axis.showTitle
+      ? (axis.title.trim() || measureFields.map(field => field.name).join(', ')).slice(0, 80)
+      : '';
+    const categoryTitle = axis.showCategoryTitle ? (axis.categoryTitle.trim() || categoryField.name) : '';
+    const angle = axis.labelRotation === 'auto' ? 0 : Number(axis.labelRotation);
+    const longestLabel = Math.max(...labels.map(label => label.length));
+
     const width = Math.max(320, chartElement.clientWidth - 16);
     const height = Math.max(220, chartElement.clientHeight - 8);
-    const margin = { top: labelField || showValueLabels ? 32 : 16, right: 18, bottom: 64, left: 64 };
+    const labelDepth = angle === 0 ? 24 : Math.min(height * 0.35, 16 + longestLabel * 6 * (angle === 45 ? 0.72 : 1));
+    const margin = {
+      top: labelField || showValueLabels ? 32 : 16,
+      right: 18,
+      bottom: 16 + labelDepth + (categoryTitle ? 20 : 0),
+      left: Math.max(40, 14 + Math.max(0, ...tickLabels.map(label => label.length)) * 6.5 + (valueTitle ? 22 : 0))
+    };
     const plotWidth = Math.max(1, width - margin.left - margin.right);
     const plotHeight = Math.max(1, height - margin.top - margin.bottom);
-    const forecast = getForecast();
-    const forecastValues = forecast ? forecast.points.flatMap(point => [point.low, point.high]) : [];
-    const minValue = Math.min(0, ...values, ...forecastValues);
-    const maxValue = Math.max(0, ...values, ...forecastValues);
-    const range = maxValue - minValue;
-    const padding = range === 0 ? Math.max(1, Math.abs(maxValue) * 0.1) : range * 0.08;
-    const domainMin = minValue < 0 ? minValue - padding : 0;
-    const domainMax = maxValue > 0 ? maxValue + padding : 0;
-    const adjustedMax = domainMax === domainMin ? domainMin + 1 : domainMax;
-    const y = value => margin.top + (adjustedMax - value) / (adjustedMax - domainMin) * plotHeight;
-    const zeroY = y(0);
-    const labels = [...categories, ...(forecast ? forecast.points.map(point => point.label) : [])];
+    const logMin = scale.log ? Math.log10(scale.min) : 0;
+    const logSpan = scale.log ? Math.log10(scale.max) - logMin : 0;
+    const y = value => {
+      const unit = scale.log
+        ? (Math.log10(value > 0 ? value : scale.min / 1000) - logMin) / logSpan
+        : (value - scale.min) / (scale.max - scale.min);
+      return margin.top + (axis.reversed ? unit : 1 - unit) * plotHeight;
+    };
+    const zeroY = y(scale.baseline);
     const groupWidth = plotWidth / labels.length;
     const xCenter = index => margin.left + groupWidth * (index + 0.5);
     const svg = createSvgElement('svg', {
@@ -509,6 +606,20 @@
       role: 'img',
       'aria-label': 'Combo chart of multiple measures'
     });
+
+    // Marks are clipped to the plot so a fixed axis range cuts them off as Tableau does.
+    const clipId = 'plot-clip';
+    const clipPath = createSvgElement('clipPath', { id: clipId });
+    clipPath.appendChild(createSvgElement('rect', {
+      x: margin.left,
+      y: margin.top - 24,
+      width: plotWidth,
+      height: plotHeight + 24
+    }));
+    const defs = createSvgElement('defs');
+    defs.appendChild(clipPath);
+    svg.appendChild(defs);
+    const plot = createSvgElement('g', { 'clip-path': `url(#${clipId})` });
 
     if (forecast) {
       const forecastX = margin.left + groupWidth * categories.length;
@@ -526,23 +637,24 @@
       });
     }
 
-    for (let tick = 0; tick <= 4; tick++) {
-      const value = adjustedMax - (adjustedMax - domainMin) * tick / 4;
+    scale.ticks.forEach((value, index) => {
       const yPosition = y(value);
-      svg.appendChild(createSvgElement('line', {
-        x1: margin.left,
-        x2: width - margin.right,
-        y1: yPosition,
-        y2: yPosition,
-        class: 'grid-line'
-      }));
-      addText(svg, numberFormat.format(value), {
+      if (axis.gridLines) {
+        svg.appendChild(createSvgElement('line', {
+          x1: margin.left,
+          x2: width - margin.right,
+          y1: yPosition,
+          y2: yPosition,
+          class: 'grid-line'
+        }));
+      }
+      addText(svg, tickLabels[index], {
         x: margin.left - 8,
         y: yPosition + 4,
         'text-anchor': 'end',
         class: 'tick-label'
       });
-    }
+    });
 
     svg.appendChild(createSvgElement('line', {
       x1: margin.left,
@@ -552,28 +664,26 @@
       class: 'axis-line'
     }));
 
-    const barFields = measureFields.filter((field, index) => getSeriesMode(field, index) === 'bar');
+    const barFields = measureFields.filter(field => getSeries(field).mode === 'bar');
     const barWidth = Math.min(36, groupWidth * 0.72 / Math.max(1, barFields.length));
+    const barX = (slotIndex, barIndex) => xCenter(slotIndex) - barWidth * barFields.length / 2 + barIndex * barWidth;
 
     chartRows.forEach((row, categoryIndex) => {
-      const center = xCenter(categoryIndex);
-      const firstBarX = center - barWidth * barFields.length / 2;
       barFields.forEach((field, barIndex) => {
         const value = getNumericValue(row, field);
         if (value === null) return;
         const yValue = y(value);
-        const rect = createSvgElement('rect', {
-          x: firstBarX + barIndex * barWidth + 1,
+        plot.appendChild(createSvgElement('rect', {
+          x: barX(categoryIndex, barIndex) + 1,
           y: Math.min(zeroY, yValue),
           width: Math.max(1, barWidth - 2),
           height: Math.max(1, Math.abs(zeroY - yValue)),
-          fill: getColor(field),
+          fill: getSeries(field).color,
           rx: 1
-        });
-        svg.appendChild(rect);
+        }));
         if (showValueLabels) {
-          addText(svg, getLabel(row[field.name]), {
-            x: firstBarX + barIndex * barWidth + barWidth / 2,
+          addText(plot, getLabel(row[field.name]), {
+            x: barX(categoryIndex, barIndex) + barWidth / 2,
             y: value >= 0 ? yValue - 4 : yValue + 12,
             'text-anchor': 'middle',
             class: 'value-label'
@@ -582,53 +692,43 @@
       });
     });
 
-    // Thin out labels so long month names do not overlap
-    const labelStep = Math.ceil(labels.length / Math.max(1, Math.floor(plotWidth / 96)));
-    labels.forEach((label, index) => {
-      if (index % labelStep !== 0) return;
-      addText(svg, label, {
-        x: xCenter(index),
-        y: height - margin.bottom + 18,
-        'text-anchor': 'middle',
-        class: 'tick-label'
-      });
-    });
-
-    measureFields.forEach((field, fieldIndex) => {
-      if (getSeriesMode(field, fieldIndex) !== 'line') return;
+    const linePoints = new Map();
+    measureFields.forEach(field => {
+      const { mode, lineStyle, color } = getSeries(field);
+      if (mode !== 'line') return;
       const points = chartRows
         .map((row, categoryIndex) => {
           const value = getNumericValue(row, field);
           return value === null ? null : { x: xCenter(categoryIndex), y: y(value), value, categoryIndex };
         })
         .filter(point => point !== null);
+      linePoints.set(field.name, points);
       if (points.length === 0) return;
 
       const path = createSvgElement('path', {
         d: points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' '),
         fill: 'none',
-        stroke: getColor(field),
+        stroke: color,
         'stroke-width': 2.5,
         'stroke-linejoin': 'round',
         'stroke-linecap': 'round',
-        'aria-label': `${field.name} ${lineStyles.get(field.name)} line`
+        'aria-label': `${field.name} ${lineStyle} line`
       });
-      const dashArray = LINE_STYLES[lineStyles.get(field.name)];
+      const dashArray = LINE_STYLES[lineStyle];
       if (dashArray) path.setAttribute('stroke-dasharray', dashArray);
-      svg.appendChild(path);
+      plot.appendChild(path);
 
       points.forEach(point => {
-        const circle = createSvgElement('circle', {
+        plot.appendChild(createSvgElement('circle', {
           cx: point.x,
           cy: point.y,
           r: 3.5,
-          fill: getColor(field),
+          fill: color,
           stroke: '#fff',
           'stroke-width': 1.5
-        });
-        svg.appendChild(circle);
+        }));
         if (showValueLabels) {
-          addText(svg, getLabel(chartRows[point.categoryIndex][field.name]), {
+          addText(plot, getLabel(chartRows[point.categoryIndex][field.name]), {
             x: point.x,
             y: point.y - 8,
             'text-anchor': 'middle',
@@ -638,11 +738,101 @@
       });
     });
 
+    // Forecast marks use the measure's own mark type in a lighter shade, as Tableau does.
+    if (forecast) {
+      forecast.series.forEach(({ field, points }) => {
+        const { mode, color } = getSeries(field);
+        const slots = points.map((point, index) => ({ ...point, slot: categories.length + index }));
+
+        if (mode === 'bar') {
+          const barIndex = barFields.indexOf(field);
+          slots.forEach(point => {
+            const left = barX(point.slot, barIndex);
+            const center = left + barWidth / 2;
+            const yValue = y(point.value);
+            plot.appendChild(createSvgElement('rect', {
+              x: left + 1,
+              y: Math.min(zeroY, yValue),
+              width: Math.max(1, barWidth - 2),
+              height: Math.max(1, Math.abs(zeroY - yValue)),
+              fill: color,
+              'fill-opacity': 0.4,
+              rx: 1
+            }));
+            if (showInterval) {
+              const capWidth = Math.min(8, barWidth / 3);
+              plot.appendChild(createSvgElement('path', {
+                d: `M ${center} ${y(point.high)} L ${center} ${y(point.low)} ` +
+                  `M ${center - capWidth} ${y(point.high)} L ${center + capWidth} ${y(point.high)} ` +
+                  `M ${center - capWidth} ${y(point.low)} L ${center + capWidth} ${y(point.low)}`,
+                stroke: color,
+                'stroke-width': 1.5,
+                fill: 'none'
+              }));
+            }
+            if (showValueLabels) {
+              addText(plot, formatAxisNumber(point.value), {
+                x: center,
+                y: (showInterval ? y(point.high) : yValue) - 4,
+                'text-anchor': 'middle',
+                class: 'value-label'
+              });
+            }
+          });
+          return;
+        }
+
+        const actual = linePoints.get(field.name) || [];
+        const anchor = actual[actual.length - 1];
+        const start = anchor ? `M ${anchor.x} ${anchor.y} ` : '';
+        const route = slots.map((point, index) => `${!anchor && index === 0 ? 'M' : 'L'} ${xCenter(point.slot)} ${y(point.value)}`).join(' ');
+        if (showInterval) {
+          const upper = slots.map(point => `L ${xCenter(point.slot)} ${y(point.high)}`);
+          const lower = slots.slice().reverse().map(point => `L ${xCenter(point.slot)} ${y(point.low)}`);
+          const first = anchor || { x: xCenter(slots[0].slot), y: y(slots[0].value) };
+          plot.appendChild(createSvgElement('path', {
+            d: `M ${first.x} ${first.y} ${upper.join(' ')} ${lower.join(' ')} Z`,
+            fill: color,
+            'fill-opacity': 0.15,
+            stroke: 'none'
+          }));
+        }
+        plot.appendChild(createSvgElement('path', {
+          d: start + route,
+          fill: 'none',
+          stroke: color,
+          'stroke-opacity': 0.6,
+          'stroke-width': 2.5,
+          'stroke-dasharray': '6 4',
+          'stroke-linecap': 'round',
+          'aria-label': `${field.name} forecast`
+        }));
+        slots.forEach(point => {
+          plot.appendChild(createSvgElement('circle', {
+            cx: xCenter(point.slot),
+            cy: y(point.value),
+            r: 3.5,
+            fill: '#fff',
+            stroke: color,
+            'stroke-width': 2
+          }));
+          if (showValueLabels) {
+            addText(plot, formatAxisNumber(point.value), {
+              x: xCenter(point.slot),
+              y: y(point.value) - 8,
+              'text-anchor': 'middle',
+              class: 'value-label'
+            });
+          }
+        });
+      });
+    }
+
     if (labelField) {
       chartRows.forEach((row, categoryIndex) => {
         const rowValues = measureFields.map(field => getNumericValue(row, field)).filter(value => value !== null);
-        const top = y(Math.max(0, ...rowValues));
-        addText(svg, getLabel(row[labelField.name]), {
+        const top = Math.min(zeroY, ...rowValues.map(y));
+        addText(plot, getLabel(row[labelField.name]), {
           x: xCenter(categoryIndex),
           y: Math.max(12, top - (showValueLabels ? 18 : 6)),
           'text-anchor': 'middle',
@@ -651,69 +841,67 @@
       });
     }
 
-    if (forecast) {
-      const color = getColor(forecast.field);
-      const anchorX = xCenter(forecast.anchor.x);
-      const anchorY = y(forecast.anchor.y);
-      const upper = forecast.points.map(point => `L ${xCenter(point.x)} ${y(point.high)}`);
-      const lower = forecast.points.slice().reverse().map(point => `L ${xCenter(point.x)} ${y(point.low)}`);
-      svg.appendChild(createSvgElement('path', {
-        d: `M ${anchorX} ${anchorY} ${upper.join(' ')} ${lower.join(' ')} Z`,
-        fill: color,
-        'fill-opacity': 0.15,
-        stroke: 'none'
-      }));
-      svg.appendChild(createSvgElement('path', {
-        d: `M ${anchorX} ${anchorY} ` + forecast.points.map(point => `L ${xCenter(point.x)} ${y(point.value)}`).join(' '),
-        fill: 'none',
-        stroke: color,
-        'stroke-width': 2.5,
-        'stroke-dasharray': '6 4',
-        'stroke-linecap': 'round',
-        'aria-label': `${forecast.field.name} forecast`
-      }));
-      forecast.points.forEach(point => {
-        const circle = createSvgElement('circle', {
-          cx: xCenter(point.x),
-          cy: y(point.value),
-          r: 3.5,
-          fill: '#fff',
-          stroke: color,
-          'stroke-width': 2
-        });
-        svg.appendChild(circle);
-        if (showValueLabels) {
-          addText(svg, numberFormat.format(point.value), {
-            x: xCenter(point.x),
-            y: y(point.value) - 8,
-            'text-anchor': 'middle',
-            class: 'value-label'
-          });
-        }
+    svg.appendChild(plot);
+
+    // Horizontal labels are thinned out so long month names do not overlap; rotated labels fit more.
+    const labelSpacing = angle === 0 ? 96 : angle === 45 ? 20 : 14;
+    const labelStep = Math.ceil(labels.length / Math.max(1, Math.floor(plotWidth / labelSpacing)));
+    const labelY = height - margin.bottom + 18;
+    labels.forEach((label, index) => {
+      if (index % labelStep !== 0) return;
+      const x = xCenter(index);
+      addText(svg, label, angle === 0
+        ? { x, y: labelY, 'text-anchor': 'middle', class: 'tick-label' }
+        : { x, y: labelY - 6, 'text-anchor': 'end', transform: `rotate(-${angle} ${x} ${labelY - 6})`, class: 'tick-label' });
+    });
+
+    if (categoryTitle) {
+      addText(svg, categoryTitle, {
+        x: margin.left + plotWidth / 2,
+        y: height - 6,
+        'text-anchor': 'middle',
+        class: 'axis-label'
       });
     }
 
-    if (showTooltipsInput.checked) {
+    // Double-click an axis to edit it, like Tableau's Edit Axis
+    for (const area of [
+      { x: 0, y: margin.top, width: margin.left, height: plotHeight },
+      { x: margin.left, y: margin.top + plotHeight, width: plotWidth, height: margin.bottom }
+    ]) {
+      const target = createSvgElement('rect', { ...area, fill: 'transparent', cursor: 'pointer' });
+      const title = createSvgElement('title');
+      title.textContent = 'Double-click to edit axis';
+      target.appendChild(title);
+      target.addEventListener('dblclick', openSettings);
+      svg.appendChild(target);
+    }
+
+    if (showTooltips) {
       const measureNames = new Set(measureFields.map(field => field.name));
       const extraFieldNames = Object.keys(chartRows[0]).filter(name =>
         name !== categoryField.name && name !== labelField?.name && !measureNames.has(name)
       );
       const getTooltipContent = index => {
         if (index >= chartRows.length) {
-          const point = forecast.points[index - chartRows.length];
+          const forecastIndex = index - chartRows.length;
           return {
-            title: point.label,
-            rows: [
-              { name: `${forecast.field.name} forecast`, value: numberFormat.format(point.value), color: getColor(forecast.field) },
-              { name: '80% range', value: `${numberFormat.format(point.low)} – ${numberFormat.format(point.high)}` }
-            ]
+            title: `${forecast.labels[forecastIndex]} (forecast)`,
+            rows: forecast.series.flatMap(({ field, points, description }) => [
+              { name: field.name, value: formatAxisNumber(points[forecastIndex].value), color: getSeries(field).color },
+              ...(showInterval ? [{
+                name: `${state.forecast.interval}% prediction interval`,
+                value: `${formatAxisNumber(points[forecastIndex].low)} – ${formatAxisNumber(points[forecastIndex].high)}`
+              }] : []),
+              { name: 'Model', value: description }
+            ])
           };
         }
         const row = chartRows[index];
         return {
           title: categories[index],
           rows: [
-            ...measureFields.map(field => ({ name: field.name, value: getLabel(row[field.name]), color: getColor(field) })),
+            ...measureFields.map(field => ({ name: field.name, value: getLabel(row[field.name]), color: getSeries(field).color })),
             ...(labelField ? [{ name: labelField.name, value: getLabel(row[labelField.name]) }] : []),
             ...extraFieldNames.map(name => ({ name, value: getLabel(row[name]) }))
           ]
@@ -736,13 +924,15 @@
       });
     }
 
-    addText(svg, 'Shared value axis', {
-      x: 14,
-      y: margin.top + plotHeight / 2,
-      transform: `rotate(-90 14 ${margin.top + plotHeight / 2})`,
-      'text-anchor': 'middle',
-      class: 'axis-label'
-    });
+    if (valueTitle) {
+      addText(svg, valueTitle, {
+        x: 14,
+        y: margin.top + plotHeight / 2,
+        transform: `rotate(-90 14 ${margin.top + plotHeight / 2})`,
+        'text-anchor': 'middle',
+        class: 'axis-label'
+      });
+    }
 
     chartElement.appendChild(svg);
   }
@@ -794,7 +984,6 @@
         measureFields = encodings.measures || [];
         labelField = encodings.label?.[0];
         chartRows = sortRowsByDate(groupRowsByCategory(rows));
-        if (!settingsPanel.hidden) renderSettings();
         render();
       } catch (error) {
         showMessage(`Unable to load Tableau data: ${error.message || error}`);
@@ -814,27 +1003,34 @@
       { name: 'Target' }
     ];
     labelField = { name: 'Region' };
-    chartRows = [
-      { Month: { value: '2026-01-01' }, Sales: { value: 92 }, Profit: { value: 38 }, Orders: { value: 62 }, Target: { value: 71 }, Region: { value: 'East' } },
-      { Month: { value: '2026-02-01' }, Sales: { value: 108 }, Profit: { value: 45 }, Orders: { value: 68 }, Target: { value: 79 }, Region: { value: 'West' } },
-      { Month: { value: '2026-03-01' }, Sales: { value: 84 }, Profit: { value: 31 }, Orders: { value: 57 }, Target: { value: 82 }, Region: { value: 'East' } },
-      { Month: { value: '2026-04-01' }, Sales: { value: 126 }, Profit: { value: 52 }, Orders: { value: 76 }, Target: { value: 88 }, Region: { value: 'North' } },
-      { Month: { value: '2026-05-01' }, Sales: { value: 115 }, Profit: { value: 49 }, Orders: { value: 73 }, Target: { value: 94 }, Region: { value: 'West' } },
-      { Month: { value: '2026-06-01' }, Sales: { value: 143 }, Profit: { value: 66 }, Orders: { value: 85 }, Target: { value: 101 }, Region: { value: 'South' } }
-    ];
+    const regions = ['East', 'West', 'North', 'South'];
+    chartRows = Array.from({ length: 24 }, (_, index) => {
+      const season = Math.sin(index / 12 * 2 * Math.PI);
+      const month = String(index % 12 + 1).padStart(2, '0');
+      return {
+        Month: { value: `${2025 + Math.floor(index / 12)}-${month}-01` },
+        Sales: { value: Math.round(90 + index * 2.5 + season * 18) },
+        Profit: { value: Math.round(35 + index * 1.1 + season * 8) },
+        Orders: { value: Math.round(60 + index * 1.2 + season * 10) },
+        Target: { value: 75 + index * 2 },
+        Region: { value: regions[index % regions.length] }
+      };
+    });
+    state.forecast.show = true;
     render();
   }
 
   window.addEventListener('resize', render);
 
-  if (window.tableau?.extensions && window.parent !== window) {
-    tableau.extensions.initializeAsync()
+  if (inTableau) {
+    tableau.extensions.initializeAsync({ configure: openSettings })
       .then(() => {
         const worksheet = tableau.extensions.worksheetContent?.worksheet;
         if (!worksheet) {
           showMessage('This page is not running inside a Tableau worksheet.');
           return;
         }
+        loadState();
         updateFromTableau(worksheet);
       })
       .catch(error => showMessage(`Unable to initialize the Tableau extension: ${error.message || error}`));

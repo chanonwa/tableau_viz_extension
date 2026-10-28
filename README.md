@@ -2,12 +2,13 @@
 
 A local Tableau Viz Extension starter that displays one category and up to 50 numeric measures as a single chart. Each measure can be switched between bars and a line. Each line can independently use a solid, dashed, dotted, or dash-dot pattern; all series share one value axis.
 
-This folder contains two extensions. Each has two manifests: one for a local server while developing, and one for the hosted copy on GitHub Pages.
+This folder contains three extensions. Each has two manifests: one for a local server while developing, and one for the hosted copy on GitHub Pages.
 
 | Extension | Local manifest | Hosted manifest (GitHub Pages) | Hosted page |
 | --- | --- | --- | --- |
 | Multi-Measure Combo Chart | `combo.trex` | `combo.server.trex` | <https://chanonwa.github.io/tableau_viz_extension/index.html> |
 | Anomaly Detection | `anomaly.trex` | `anomaly.server.trex` | <https://chanonwa.github.io/tableau_viz_extension/anomaly.html> |
+| Radial Chart | `radial.trex` | `radial.server.trex` | <https://chanonwa.github.io/tableau_viz_extension/radial.html> |
 
 To just use the extensions, the hosted manifests are the quickest way in: they need no local server and work on Tableau Server and Tableau Cloud. See [Use the hosted version](#use-the-hosted-version-github-pages). To change the code and try it before pushing, [run the server locally](#run-the-server-locally).
 
@@ -31,13 +32,13 @@ Use this for Tableau Desktop on your own computer. Tableau Desktop allows extens
 
    On macOS or Linux, or without PowerShell, any static file server on port 8765 works, for example `python3 -m http.server 8765` from this folder.
 
-2. Check it in a browser: `http://localhost:8765/` (combo chart) and `http://localhost:8765/anomaly.html` (anomaly detection). Outside Tableau, both pages show sample data.
-3. In Tableau Desktop, open a worksheet, open the mark type dropdown on the Marks card, and choose **Add Extension** > **Access Local Viz Extensions**. Pick `combo.trex` or `anomaly.trex`.
+2. Check it in a browser: `http://localhost:8765/` (combo chart) and `http://localhost:8765/anomaly.html` (anomaly detection) and `http://localhost:8765/radial.html` (radial chart). Outside Tableau, the pages show sample data.
+3. In Tableau Desktop, open a worksheet, open the mark type dropdown on the Marks card, and choose **Add Extension** > **Access Local Viz Extensions**. Pick `combo.trex`, `anomaly.trex`, or `radial.trex`.
 4. For the combo chart, put one discrete field or date (discrete or continuous) on **Category** and one or more numeric measures on **Measures**. Change each measure's mark type (bar or line) and line style in **Format Extension**.
 
 Tableau reads a manifest only when the extension is added. After a change to a `.trex` file (for example a new encoding), remove the extension from the Marks card and add it again. Changes to the HTML or JavaScript only need the extension to reload.
 
-To use a different port, change `http://localhost:8765/` in `serve.ps1` and the `<url>` in both `.trex` files.
+To use a different port, change `http://localhost:8765/` in `serve.ps1` and the `<url>` in each local `.trex` file.
 
 The extension uses Tableau's summary data and refreshes when the worksheet data changes. The value axis is intentionally shared, so measures with very different scales may be hard to compare. Date categories are shown as month and year (for example "May 2026") and sorted oldest to newest.
 
@@ -91,15 +92,40 @@ Each panel lists the trend (change from first to last, slope per period), the ra
 
 Statistics include points, mean, median, standard deviation, min, max, total, first-to-last change (dates only), seasonality strength, and anomaly rate. The *score* is the deviation divided by the method's spread (standard deviation, IQR, or robust MAD-based sigma). The analysis runs on the worksheet's aggregated summary data after filters. Anomaly flags stay inside the extension, so they can't be used as a filter on other sheets.
 
+## Radial Chart extension
+
+A third, separate Viz Extension (`radial.trex`, served at `http://localhost:8765/radial.html`) for showing how a total splits across members: a donut with the total in the center, percent labels around the ring, and a legend table with each member's percent and value. It can also draw a pie, or radial bars (one ring per member, the longest spanning 270°). Open `http://localhost:8765/radial.html` in a browser to preview it with sample revenue data.
+
+1. With `serve.ps1` running, add the extension from `radial.trex` on the Marks card.
+2. Put a dimension on **Category** (each member becomes a slice) and a measure on **Value**. Fields on **Tooltip** are listed in the tooltip. Fields on **Detail** are combined per member (numbers are added up).
+3. Optionally put a KPI measure on **Center**, and a second measure (for example % vs prior year) for a comparison line that shows green with ▲ when positive and red with ▼ when negative. The extension gets one value per member, so use a calculation that gives one value for the whole chart, such as `TOTAL(SUM([Revenue]))`, a `WINDOW_SUM`, or a `FIXED` calculation; otherwise the member values are added up.
+4. Open **Format Extension** on the Marks card to change:
+   - **Visible rows**: uses only rows where a True/False field on **Detail** is True, such as an `In Date Range` test driven by a date range parameter. It works like the combo chart's *Visible categories*, so one parameter can drive both charts. The field isn't listed in the tooltip.
+   - **Chart**: donut, pie, or radial bars; hole size; start angle; how much of the circle the chart spans (full, three quarters, or half for a gauge-style half donut); longest bar angle (radial bars); clockwise or counterclockwise.
+   - **Slices**: gap between slices and its color (the background color by default, or any color for a border look); rounded corners (rounded bar ends for radial bars); how far a hovered or selected slice pops out; opacity.
+   - **Sort and group**: largest first, smallest first, alphabetical, or data source order; and *Show top N*, which combines the smaller members into one slice (named *Other* by default).
+   - **Colors**: a palette (Ocean, Tableau 10, Blues, Warm, Pastel) and a color for each member. Palette colors follow the display order; a member's own color stays with it.
+   - **Labels**: percent, value, both, name, or name and percent; outside the ring (with an adjustable distance and optional leader lines) or inside the slice; a minimum share below which labels are hidden; font size and bold; color (automatic, the slice color, or a custom color).
+   - **Center**: the total, the KPI from the Center encoding, or the caption only; the caption (*Total* by default); value size and colors; the comparison line and its up and down colors; and whether hovering a slice shows its value, name, and percent in the center.
+   - **Legend**: below, above, right, or left of the chart (side legends move below on narrow sheets), or hidden; percent and value columns; header row; total row; font size.
+   - **Number format**: Automatic (the field's Tableau format), number, currency, or percentage; units (none, automatic K/M/B, thousands, millions, billions); decimals; currency symbol (end it with a space, as in ฿ followed by a space, to get "฿ 61.4M"); percent decimals.
+   - **Tooltip**: on or off; the extension's tooltip (value, percent of total, and Tooltip fields) or Tableau's own tooltip from the Tooltip shelf. Tableau's tooltip is used for members drawn from a single mark; members split by a field on Detail and the *Other* slice use the extension's tooltip.
+   - **Interaction and animation**: on hover, dim the other slices, pop the slice out, both, or nothing; click to select in Tableau; sweep the slices in when the data changes; the background track behind radial bars.
+   - **Title and background**: an optional title with its own font size and color, for when the worksheet title is turned off; the background color.
+
+Clicking a slice or legend row selects that member's marks in Tableau, so dashboard filter and highlight actions run from it. Ctrl+click (Cmd+click on a Mac) adds to or removes from the selection, and clicking empty space clears it.
+
+Percentages are each member's share of the total of the members shown, after filters. Zero and negative values can't be drawn as slices, so they are left out and counted in a note at the bottom of the chart.
+
 ## Use the hosted version (GitHub Pages)
 
 The extensions are hosted from this repository with GitHub Pages at `https://chanonwa.github.io/tableau_viz_extension/`. The site is published from the `main` branch (root folder), so every push to `main` updates the hosted extensions, usually within a minute or two. Viewers get the update the next time the extension loads. GitHub Pages serves over HTTPS, which Tableau Server and Tableau Cloud require.
 
-Open <https://chanonwa.github.io/tableau_viz_extension/index.html> or <https://chanonwa.github.io/tableau_viz_extension/anomaly.html> in a browser to check the hosted pages. Outside Tableau they show sample data.
+Open <https://chanonwa.github.io/tableau_viz_extension/index.html>, <https://chanonwa.github.io/tableau_viz_extension/anomaly.html>, or <https://chanonwa.github.io/tableau_viz_extension/radial.html> in a browser to check the hosted pages. Outside Tableau they show sample data.
 
 ### In Tableau Desktop
 
-No local server is needed. On a worksheet, open the mark type dropdown on the Marks card, choose **Add Extension** > **Access Local Viz Extensions**, and pick `combo.server.trex` or `anomaly.server.trex`. In the extension list they show as "Multi-Measure Combo Chart (GitHub Pages)" and "Anomaly Detection (GitHub Pages)".
+No local server is needed. On a worksheet, open the mark type dropdown on the Marks card, choose **Add Extension** > **Access Local Viz Extensions**, and pick `combo.server.trex`, `anomaly.server.trex`, or `radial.server.trex`. In the extension list they show as "Multi-Measure Combo Chart (GitHub Pages)", "Anomaly Detection (GitHub Pages)", and "Radial Chart (GitHub Pages)".
 
 ### On Tableau Server or Tableau Cloud
 
@@ -107,7 +133,7 @@ No local server is needed. On a worksheet, open the mark type dropdown on the Ma
    1. Open the site's **Settings** > **Extensions**.
    2. Make sure extensions, including viz extensions, are allowed to run on the site. On Tableau Server, the server administrator may also need to enable extensions for the whole server first.
    3. Add `https://chanonwa.github.io` to the safe list, with full data access, because the extensions read the worksheet's summary data.
-2. **Build the workbook with the hosted manifests.** In Tableau Desktop, add the extension from `combo.server.trex` or `anomaly.server.trex`, not the local `.trex`, so the workbook stores the HTTPS address rather than `localhost`. A worksheet built with the local manifest has to have its extension removed and added again from the hosted one.
+2. **Build the workbook with the hosted manifests.** In Tableau Desktop, add the extension from `combo.server.trex`, `anomaly.server.trex`, or `radial.server.trex`, not the local `.trex`, so the workbook stores the HTTPS address rather than `localhost`. A worksheet built with the local manifest has to have its extension removed and added again from the hosted one.
 3. **Publish** the workbook to Tableau Server or Tableau Cloud as usual, then open it in a browser to check the chart loads.
 
 Settings made in **Format Extension** are saved in the workbook, so they travel with it when you publish.
@@ -129,7 +155,7 @@ If the extension area is blank or shows a warning:
 If your organisation only allows extensions from its own servers, host the files elsewhere instead of GitHub Pages:
 
 1. Copy the folder to any HTTPS web server or static hosting service (IIS, nginx, Apache, Azure Static Web Apps, Amazon S3 with CloudFront, and so on), keeping the `vendor` subfolder. `README.md`, `serve.ps1`, and the `.trex` files aren't needed there. The server needs a valid certificate and must serve `.js` files as JavaScript.
-2. Copy `combo.server.trex` and `anomaly.server.trex` and change the `<url>` in each to the new address, for example:
+2. Copy `combo.server.trex`, `anomaly.server.trex`, and `radial.server.trex` and change the `<url>` in each to the new address, for example:
 
    ```xml
    <source-location>
@@ -137,7 +163,7 @@ If your organisation only allows extensions from its own servers, host the files
    </source-location>
    ```
 
-   The settings dialogs (`settings.html`, `anomaly-settings.html`) are found relative to the page, so they need no change.
+   The settings dialogs (`settings.html`, `anomaly-settings.html`, `radial-settings.html`) are found relative to the page, so they need no change.
 3. Add the new address to the site's extension safe list and build the workbook with the new manifests, as in [On Tableau Server or Tableau Cloud](#on-tableau-server-or-tableau-cloud).
 
 ## Requirements

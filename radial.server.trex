@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest manifest-version="0.1" xmlns="http://www.tableau.com/xml/extension_manifest">
+  <worksheet-extension id="com.custom.radial.chart" extension-version="1.0.0">
+    <default-locale>en_US</default-locale>
+    <name resource-id="name"/>
+    <description>Donut, pie, or radial bar chart with a center total, slice labels, and a legend table.</description>
+    <author name="Chanon Wasusopon" email="cwasusopon@gmail.com" organization="Local" website="https://github.com/chanonwa/tableau_viz_extension"/>
+    <min-api-version>1.11</min-api-version>
+    <source-location>
+      <url>https://chanonwa.github.io/tableau_viz_extension/radial.html</url>
+    </source-location>
+    <icon/>
+    <context-menu>
+      <configure-context-menu-item/>
+    </context-menu>
+    <encoding id="category">
+      <display-name>Category</display-name>
+      <role-spec>
+        <role-type>discrete-dimension</role-type>
+      </role-spec>
+      <fields max-count="1"/>
+      <tooltip>Dimension whose members become the slices</tooltip>
+    </encoding>
+    <encoding id="value">
+      <display-name>Value</display-name>
+      <data-spec>
+        <data-type>numeric</data-type>
+      </data-spec>
+      <role-spec>
+        <role-type>continuous-measure</role-type>
+      </role-spec>
+      <fields max-count="1"/>
+      <tooltip>Measure that sizes each slice</tooltip>
+    </encoding>
+    <encoding id="center">
+      <display-name>Center</display-name>
+      <data-spec>
+        <data-type>numeric</data-type>
+      </data-spec>
+      <role-spec>
+        <role-type>continuous-measure</role-type>
+        <role-type>discrete-measure</role-type>
+      </role-spec>
+      <fields max-count="2"/>
+      <tooltip>Optional KPI shown in the center, then a comparison shown green or red under it</tooltip>
+    </encoding>
+  </worksheet-extension>
+  <resources>
+    <resource id="name">
+      <text locale="en_US">Radial Chart (GitHub Pages)</text>
+    </resource>
+  </resources>
+</manifest>

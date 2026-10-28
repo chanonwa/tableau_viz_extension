@@ -46,7 +46,10 @@
       applyToTooltips: true
     },
     // Field on the Color encoding splits the primary (first) bar measure
-    colorGroup: { layout: 'stacked', colors: {} },
+    // fills: member -> 'solid' | 'hatched' | 'light' (solid when missing)
+    colorGroup: { layout: 'stacked', colors: {}, fills: {} },
+    // Field on the Bar Style encoding: value -> 'solid' | 'hatched' | 'light'
+    barStyle: { fills: {} },
     // Mirrors Tableau's Edit Axis options; empty strings mean "Automatic"
     axis: {
       title: '',
@@ -100,8 +103,15 @@
   let labelField;
   let colorField;
   let colorMembers = [];
-  // Combined row -> { measureName: Map(member -> { value, label }) }
+  // Field on the Bar Style encoding (e.g. Official / Estimate) and its values
+  let styleField;
+  let styleValues = [];
+  // Every Color/Bar Style combination in the data: { key, member, style }
+  let segments = [];
+  // Combined row -> { measureName: Map(segment key -> { member, style, value, label }) }
   const rowBreakdowns = new WeakMap();
+  // Combined row -> Set of Bar Style values in that category
+  const rowStyles = new WeakMap();
   let tooltipContent = null;
   let state = mergeState({});
 
@@ -115,8 +125,10 @@
       colorGroup: {
         ...DEFAULT_STATE.colorGroup,
         ...saved.colorGroup,
-        colors: { ...saved.colorGroup?.colors }
+        colors: { ...saved.colorGroup?.colors },
+        fills: { ...saved.colorGroup?.fills }
       },
+      barStyle: { fills: { ...saved.barStyle?.fills } },
       forecast: { ...DEFAULT_STATE.forecast, ...saved.forecast }
     };
   }
@@ -228,23 +240,57 @@
     return Number.isFinite(number) ? number : null;
   }
 
-  // Per measure, each Color member's value within one category
+  // A segment of the primary bar is one Color member and/or one Bar Style value (null when that encoding is empty).
+  function getRowSegment (row) {
+    const member = colorField ? getLabel(row[colorField.name]) : null;
+    const style = styleField ? getLabel(row[styleField.name]) : null;
+    return { key: JSON.stringify([member, style]), member, style };
+  }
+
+  // Per measure, each segment's value within one category
   function getGroupBreakdown (group) {
     const breakdown = {};
     for (const field of measureFields) {
-      const members = new Map();
+      const segmentValues = new Map();
       for (const row of group) {
         const value = getNumericValue(row, field);
         if (value === null) continue;
-        const member = getLabel(row[colorField.name]);
-        const existing = members.get(member);
-        members.set(member, existing
-          ? { value: existing.value + value, label: numberFormat.format(existing.value + value) }
-          : { value, label: getLabel(row[field.name]) });
+        const segment = getRowSegment(row);
+        const existing = segmentValues.get(segment.key);
+        segmentValues.set(segment.key, existing
+          ? { ...existing, value: existing.value + value, label: numberFormat.format(existing.value + value) }
+          : { ...segment, value, label: getLabel(row[field.name]) });
       }
-      breakdown[field.name] = members;
+      breakdown[field.name] = segmentValues;
     }
     return breakdown;
+  }
+
+  // Values that read as estimates start hatched; everything else starts solid
+  function getDefaultStyleFill (style) {
+    return /estim|forecast|project|prelim|provisional/i.test(style) ? 'hatched' : 'solid';
+  }
+
+  function getStyleFill (style) {
+    return state.barStyle.fills[style] || getDefaultStyleFill(style);
+  }
+
+  function getSegmentFill (segment) {
+    return segment.style !== null ? getStyleFill(segment.style) : getMemberFill(segment.member);
+  }
+
+  function getSegmentColor (segment, field) {
+    return segment.member !== null ? getMemberColor(segment.member) : getSeries(field).color;
+  }
+
+  function getSegmentName (segment) {
+    return [segment.member, segment.style].filter(part => part !== null).join(' · ');
+  }
+
+  // Bar Style fill for a whole category, used by bar measures that are not split; solid when the category mixes values
+  function getRowFill (row) {
+    const styles = rowStyles.get(row);
+    return styles && styles.size === 1 ? getStyleFill([...styles][0]) : 'solid';
   }
 
   function getBreakdown (row, field) {
@@ -254,6 +300,22 @@
   function getMemberColor (member) {
     const index = Math.max(0, colorMembers.indexOf(member));
     return state.colorGroup.colors[member] || COLORS[(measureFields.length + index) % COLORS.length];
+  }
+
+  function getMemberFill (member) {
+    return state.colorGroup.fills[member] || 'solid';
+  }
+
+  // Shows a member's fill style on an HTML swatch (legend and tooltip)
+  function styleFillSwatch (swatch, color, fill) {
+    swatch.style.backgroundColor = color;
+    if (fill === 'solid') return;
+    swatch.style.border = `1px solid ${color}`;
+    swatch.style.boxSizing = 'border-box';
+    swatch.style.backgroundColor = 'transparent';
+    swatch.style.backgroundImage = fill === 'hatched'
+      ? `repeating-linear-gradient(45deg, ${color} 0 1.5px, transparent 1.5px 3.5px)`
+      : `linear-gradient(${color}4d, ${color}4d)`;
   }
 
   // Fields on Detail or Color split a category into several rows; combine them into one row per category.
@@ -270,7 +332,8 @@
     const measureNames = new Set(measureFields.map(field => field.name));
     return [...groups.values()].map(group => {
       const combined = combineRows(group, measureNames);
-      if (colorField) rowBreakdowns.set(combined, getGroupBreakdown(group));
+      if (colorField || styleField) rowBreakdowns.set(combined, getGroupBreakdown(group));
+      if (styleField) rowStyles.set(combined, new Set(group.map(row => getLabel(row[styleField.name]))));
       return combined;
     });
   }
@@ -312,7 +375,7 @@
         if (item.color) {
           const swatch = document.createElement('span');
           swatch.className = 'tooltip-swatch';
-          swatch.style.backgroundColor = item.color;
+          styleFillSwatch(swatch, item.color, item.fill || 'solid');
           row.appendChild(swatch);
         }
         const name = document.createElement('span');
@@ -365,7 +428,18 @@
             members: colorMembers.map((member, index) => ({
               name: member,
               color: getMemberColor(member),
+              fill: getMemberFill(member),
               defaultColor: COLORS[(measureFields.length + index) % COLORS.length]
+            }))
+          }
+        : null,
+      style: styleField && styleValues.length > 0
+        ? {
+            fieldName: styleField.name,
+            values: styleValues.map(style => ({
+              name: style,
+              fill: getStyleFill(style),
+              defaultFill: getDefaultStyleFill(style)
             }))
           }
         : null
@@ -570,29 +644,51 @@
     return { labels, series };
   }
 
+  // Legends for the Color and Bar Style encodings
   function renderColorLegend () {
     colorLegendElement.replaceChildren();
-    if (!colorField || colorMembers.length === 0) return;
+    const hasColor = colorField && colorMembers.length > 0;
+    const hasStyle = styleField && styleValues.length > 0;
+    if (!hasColor && !hasStyle) return;
     const primaryBar = measureFields.find(field => getSeries(field).mode === 'bar');
 
-    const title = document.createElement('span');
-    title.className = 'legend-title';
-    title.textContent = primaryBar ? `${colorField.name} (${primaryBar.name})` : colorField.name;
-    colorLegendElement.appendChild(title);
+    const addGroup = (titleText, entries) => {
+      const title = document.createElement('span');
+      title.className = 'legend-title';
+      title.textContent = titleText;
+      colorLegendElement.appendChild(title);
+      for (const entry of entries) {
+        const item = document.createElement('span');
+        item.className = 'legend-item';
+        const swatch = document.createElement('span');
+        swatch.className = 'legend-swatch';
+        styleFillSwatch(swatch, entry.color, entry.fill);
+        item.append(swatch, entry.name);
+        colorLegendElement.appendChild(item);
+      }
+    };
+
     if (!primaryBar) {
       const note = document.createElement('span');
-      note.textContent = 'Color applies to bars; set a measure to Bar to use it.';
+      note.textContent = 'Color and Bar Style apply to bars; set a measure to Bar to use them.';
       colorLegendElement.appendChild(note);
       return;
     }
-    for (const member of colorMembers) {
-      const item = document.createElement('span');
-      item.className = 'legend-item';
-      const swatch = document.createElement('span');
-      swatch.className = 'legend-swatch';
-      swatch.style.backgroundColor = getMemberColor(member);
-      item.append(swatch, member);
-      colorLegendElement.appendChild(item);
+    if (hasColor) {
+      addGroup(`${colorField.name} (${primaryBar.name})`, colorMembers.map(member => ({
+        name: member,
+        color: getMemberColor(member),
+        // Bar Style decides the fill when it is in use
+        fill: hasStyle ? 'solid' : getMemberFill(member)
+      })));
+    }
+    if (hasStyle) {
+      // Gray swatches show the fill only, since colors come from Color or the measure
+      addGroup(styleField.name, styleValues.map(style => ({
+        name: style,
+        color: hasColor ? '#6b6f76' : getSeries(primaryBar).color,
+        fill: getStyleFill(style)
+      })));
     }
   }
 
@@ -707,24 +803,36 @@
       ? forecast.series.flatMap(item => item.points.flatMap(point => showInterval ? [point.low, point.high] : [point.value]))
       : [];
 
-    // The Color encoding splits the first bar measure into stacked or side-by-side member bars.
+    // The Color and Bar Style encodings split the first bar measure into segments.
     const barFields = measureFields.filter(field => getSeries(field).mode === 'bar');
-    // The primary measure is the first bar measure; primaryBar is set only when Color splits it.
+    // The primary measure is the first bar measure; primaryBar is set only when it is split.
     const primaryMeasure = barFields[0] || null;
-    const primaryBar = colorField && colorMembers.length > 0 ? primaryMeasure : null;
-    const sideBySide = Boolean(primaryBar) && state.colorGroup.layout === 'side-by-side';
-    const stackTotals = row => {
-      const memberValues = [...getBreakdown(row, primaryBar).values()].map(item => item.value);
-      return {
-        positive: memberValues.filter(value => value > 0).reduce((sum, value) => sum + value, 0),
-        negative: memberValues.filter(value => value < 0).reduce((sum, value) => sum + value, 0)
-      };
+    const splitActive = (colorField && colorMembers.length > 0) || (styleField && styleValues.length > 0);
+    const primaryBar = splitActive ? primaryMeasure : null;
+    // Side by side puts each Color member in its own column; Bar Style values stack within a column.
+    const columns = colorField && colorMembers.length > 0 ? colorMembers : [null];
+    const sideBySide = Boolean(primaryBar) && columns.length > 1 && state.colorGroup.layout === 'side-by-side';
+    // Solid segments sit at the bottom of a stack and shaded ones (such as estimates) on top
+    const FILL_ORDER = { solid: 0, light: 1, hatched: 2 };
+    const orderedSegments = segments.slice().sort((a, b) =>
+      FILL_ORDER[getSegmentFill(a)] - FILL_ORDER[getSegmentFill(b)] ||
+      styleValues.indexOf(a.style) - styleValues.indexOf(b.style) ||
+      colorMembers.indexOf(a.member) - colorMembers.indexOf(b.member)
+    );
+    // Positive and negative stack heights per column for one category
+    const getColumnStacks = row => {
+      const stacks = new Map();
+      for (const item of getBreakdown(row, primaryBar).values()) {
+        const column = sideBySide ? item.member : null;
+        const stack = stacks.get(column) || { positive: 0, negative: 0 };
+        if (item.value > 0) stack.positive += item.value; else stack.negative += item.value;
+        stacks.set(column, stack);
+      }
+      return [...stacks.values()];
     };
-    const colorValues = !primaryBar ? [] : chartRows.flatMap(row => {
-      if (sideBySide) return [...getBreakdown(row, primaryBar).values()].map(item => item.value);
-      const totals = stackTotals(row);
-      return [totals.positive, totals.negative];
-    });
+    const colorValues = !primaryBar ? [] : chartRows.flatMap(row =>
+      getColumnStacks(row).flatMap(stack => [stack.positive, stack.negative])
+    );
 
     const axis = state.axis;
     const scale = getValueScale([...values, ...forecastValues, ...colorValues]);
@@ -780,7 +888,30 @@
     }));
     const defs = createSvgElement('defs');
     defs.appendChild(clipPath);
+
     svg.appendChild(defs);
+
+    // Diagonal stripe pattern per color, created the first time a hatched bar needs it
+    const hatchIds = new Map();
+    const getHatchFill = color => {
+      if (!hatchIds.has(color)) {
+        const id = `hatch-${hatchIds.size}`;
+        const pattern = createSvgElement('pattern', { id, patternUnits: 'userSpaceOnUse', width: 6, height: 6, patternTransform: 'rotate(45)' });
+        pattern.appendChild(createSvgElement('rect', { width: 6, height: 6, fill: color, 'fill-opacity': 0.15 }));
+        pattern.appendChild(createSvgElement('line', { x1: 0, y1: 0, x2: 0, y2: 6, stroke: color, 'stroke-width': 3 }));
+        defs.appendChild(pattern);
+        hatchIds.set(color, id);
+      }
+      return `url(#${hatchIds.get(color)})`;
+    };
+
+    // Rect attributes for a bar part; shaded fills get an outline in their color so their edges stay visible
+    const getBarPaint = (color, fill, solidStroke = 'none') => ({
+      fill: fill === 'hatched' ? getHatchFill(color) : color,
+      'fill-opacity': fill === 'light' ? 0.3 : 1,
+      stroke: fill === 'solid' ? solidStroke : color,
+      'stroke-width': fill === 'solid' ? 0.5 : 1
+    });
     const plot = createSvgElement('g', { 'clip-path': `url(#${clipId})` });
 
     if (forecast) {
@@ -827,7 +958,7 @@
     }));
 
     // Each bar measure takes one width unit; a side-by-side Color measure takes one unit per member.
-    const barUnits = barFields.map(field => field === primaryBar && sideBySide ? colorMembers.length : 1);
+    const barUnits = barFields.map(field => field === primaryBar && sideBySide ? columns.length : 1);
     const totalUnits = barUnits.reduce((sum, units) => sum + units, 0);
     const unitOffsets = barUnits.map((_, index) => barUnits.slice(0, index).reduce((sum, units) => sum + units, 0));
     const barWidth = Math.min(36, groupWidth * 0.72 / Math.max(1, totalUnits));
@@ -838,53 +969,55 @@
     const shouldLabel = new Map(measureFields.map(field =>
       [field.name, labelFilter(chartRows.map(row => getNumericValue(row, field)))]
     ));
-    const shouldLabelMember = new Map(primaryBar
-      ? colorMembers.map(member => [member, labelFilter(chartRows.map(row => getBreakdown(row, primaryBar).get(member)?.value ?? null))])
+    const shouldLabelSegment = new Map(primaryBar
+      ? segments.map(segment => [segment.key, labelFilter(chartRows.map(row => getBreakdown(row, primaryBar).get(segment.key)?.value ?? null))])
       : []);
 
-    const drawColorBars = (row, categoryIndex, barIndex) => {
+    const drawSplitBars = (row, categoryIndex, barIndex) => {
       const breakdown = getBreakdown(row, primaryBar);
-      let positive = 0;
-      let negative = 0;
-      colorMembers.forEach((member, subIndex) => {
-        const item = breakdown.get(member);
-        if (!item || (!sideBySide && item.value === 0)) return;
-        let from = 0;
-        let to = item.value;
-        if (!sideBySide) {
-          from = item.value >= 0 ? positive : negative;
-          to = from + item.value;
-          if (item.value >= 0) positive = to; else negative = to;
-        }
+      // Running stack heights per column
+      const stacks = new Map();
+      orderedSegments.forEach(segment => {
+        const item = breakdown.get(segment.key);
+        if (!item || item.value === 0) return;
+        const column = sideBySide ? segment.member : null;
+        const stack = stacks.get(column) || { positive: 0, negative: 0 };
+        stacks.set(column, stack);
+        const from = item.value >= 0 ? stack.positive : stack.negative;
+        const to = from + item.value;
+        if (item.value >= 0) stack.positive = to; else stack.negative = to;
+
         const fromY = from === 0 ? zeroY : y(from);
         const toY = y(to);
-        const left = barX(categoryIndex, barIndex, sideBySide ? subIndex : 0);
+        const left = barX(categoryIndex, barIndex, sideBySide ? columns.indexOf(segment.member) : 0);
         const width = sideBySide ? barWidth : barSpan(barIndex);
+        const color = getSegmentColor(segment, primaryBar);
+        const fill = getSegmentFill(segment);
         plot.appendChild(createSvgElement('rect', {
           x: left + 1,
           y: Math.min(fromY, toY),
           width: Math.max(1, width - 2),
           height: Math.max(1, Math.abs(fromY - toY)),
-          fill: getMemberColor(member),
-          stroke: sideBySide ? 'none' : '#fff',
-          'stroke-width': 0.5
+          ...getBarPaint(color, fill, sideBySide && !styleField ? 'none' : '#fff')
         }));
-        if (showBreakdownLabels && shouldLabelMember.get(member)(categoryIndex)) {
+
+        if (showBreakdownLabels && shouldLabelSegment.get(segment.key)(categoryIndex)) {
           const text = formatLabel(item.value, item.label);
-          if (sideBySide) {
-            addLabel(plot, text, left + width / 2, barLabelY(fromY, toY), getMemberColor(member), { inside: labelInsideBar });
+          // Shaded fills are mostly light, so labels on them use dark text
+          const insideColor = fill === 'solid' ? color : '#ffffff';
+          if (sideBySide && !styleField) {
+            addLabel(plot, text, left + width / 2, barLabelY(fromY, toY), labelInsideBar ? insideColor : color, { inside: labelInsideBar });
           } else if (Math.abs(fromY - toY) >= labelFontSize + 2) {
             // Stacked segments are labelled in their middle; segments too thin for the text are skipped
-            addLabel(plot, text, left + width / 2, (fromY + toY) / 2 + labelFontSize / 3, getMemberColor(member), { inside: true });
+            addLabel(plot, text, left + width / 2, (fromY + toY) / 2 + labelFontSize / 3, insideColor, { inside: true });
           }
         }
       });
 
-      // Total above the stack, or above the tallest side-by-side bar
+      // Total above the stack, or above the tallest side-by-side column
       if (showTotalLabels && shouldLabel.get(primaryBar.name)(categoryIndex)) {
-        const memberValues = [...breakdown.values()].map(item => item.value);
-        const top = sideBySide ? Math.max(0, ...memberValues) : positive;
-        const bottom = sideBySide ? Math.min(0, ...memberValues) : negative;
+        const top = Math.max(0, ...[...stacks.values()].map(stack => stack.positive));
+        const bottom = Math.min(0, ...[...stacks.values()].map(stack => stack.negative));
         drawTotalLabel(row, categoryIndex, barIndex, top !== 0 ? y(top) : bottom !== 0 ? y(bottom) : zeroY);
       }
     };
@@ -903,19 +1036,21 @@
     chartRows.forEach((row, categoryIndex) => {
       barFields.forEach((field, barIndex) => {
         if (field === primaryBar) {
-          drawColorBars(row, categoryIndex, barIndex);
+          drawSplitBars(row, categoryIndex, barIndex);
           return;
         }
         const value = getNumericValue(row, field);
         if (value === null) return;
         const yValue = y(value);
+        // Other bar measures take the category's Bar Style when the whole category has one value
+        const fill = styleField ? getRowFill(row) : 'solid';
         plot.appendChild(createSvgElement('rect', {
           x: barX(categoryIndex, barIndex) + 1,
           y: Math.min(zeroY, yValue),
           width: Math.max(1, barWidth - 2),
           height: Math.max(1, Math.abs(zeroY - yValue)),
-          fill: getSeries(field).color,
-          rx: 1
+          rx: 1,
+          ...getBarPaint(getSeries(field).color, fill)
         }));
         // Without a Color split, the primary total label replaces the primary mark label
         if (field === primaryMeasure && showTotalLabels) {
@@ -926,7 +1061,7 @@
             formatLabel(value, getLabel(row[field.name])),
             barX(categoryIndex, barIndex) + barWidth / 2,
             barLabelY(zeroY, yValue),
-            getSeries(field).color,
+            labelInsideBar && fill !== 'solid' ? '#ffffff' : getSeries(field).color,
             { inside: labelInsideBar }
           );
         }
@@ -1107,7 +1242,8 @@
     if (showTooltips) {
       const measureNames = new Set(measureFields.map(field => field.name));
       const extraFieldNames = Object.keys(chartRows[0]).filter(name =>
-        name !== categoryField.name && name !== labelField?.name && name !== colorField?.name && !measureNames.has(name)
+        name !== categoryField.name && name !== labelField?.name && name !== colorField?.name &&
+          name !== styleField?.name && !measureNames.has(name)
       );
       const getTooltipContent = index => {
         if (index >= chartRows.length) {
@@ -1129,11 +1265,24 @@
           title: categories[index],
           rows: [
             ...measureFields.flatMap(field => [
-              { name: field.name, value: formatTooltipValue(getNumericValue(row, field), getLabel(row[field.name])), color: field === primaryBar ? null : getSeries(field).color },
+              {
+                name: field.name,
+                value: formatTooltipValue(getNumericValue(row, field), getLabel(row[field.name])),
+                color: field === primaryBar ? null : getSeries(field).color,
+                fill: field === primaryBar || !styleField || getSeries(field).mode !== 'bar' ? 'solid' : getRowFill(row)
+              },
               ...(field === primaryBar
-                ? colorMembers
-                  .filter(member => getBreakdown(row, field).has(member))
-                  .map(member => ({ name: member, value: formatTooltipValue(getBreakdown(row, field).get(member).value, getBreakdown(row, field).get(member).label), color: getMemberColor(member) }))
+                ? orderedSegments
+                  .filter(segment => getBreakdown(row, field).has(segment.key))
+                  .map(segment => {
+                    const item = getBreakdown(row, field).get(segment.key);
+                    return {
+                      name: getSegmentName(segment),
+                      value: formatTooltipValue(item.value, item.label),
+                      color: getSegmentColor(segment, field),
+                      fill: getSegmentFill(segment)
+                    };
+                  })
                 : [])
             ]),
             ...(labelField ? [{ name: labelField.name, value: getLabel(row[labelField.name]) }] : []),
@@ -1209,10 +1358,17 @@
 
   // Members are sorted alphabetically, as in Tableau's default color legend
   function setColorMembers (rows) {
-    colorMembers = colorField
-      ? [...new Set(rows.map(row => getLabel(row[colorField.name])))]
-        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+    const distinctSorted = field => field
+      ? [...new Set(rows.map(row => getLabel(row[field.name])))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
       : [];
+    colorMembers = distinctSorted(colorField);
+    styleValues = distinctSorted(styleField);
+    const seen = new Map();
+    for (const row of rows) {
+      const segment = getRowSegment(row);
+      if (!seen.has(segment.key)) seen.set(segment.key, segment);
+    }
+    segments = [...seen.values()];
   }
 
   function updateFromTableau (worksheet) {
@@ -1226,6 +1382,7 @@
         measureFields = encodings.measures || [];
         labelField = encodings.label?.[0];
         colorField = encodings.colorgroup?.[0];
+        styleField = encodings.barstyle?.[0];
         setColorMembers(rows);
         chartRows = sortRowsByDate(groupRowsByCategory(rows));
         render();
@@ -1248,7 +1405,9 @@
     ];
     labelField = undefined;
     colorField = { name: 'Region' };
-    // Each month is split across regions so the Color grouping can be previewed
+    styleField = { name: 'Source' };
+    // Each month is split across regions so the Color grouping can be previewed;
+    // the last six months are estimates so the Bar Style can be previewed.
     const regions = [['East', 0.4], ['West', 0.35], ['North', 0.25]];
     const rows = Array.from({ length: 24 }, (_, index) => {
       const season = Math.sin(index / 12 * 2 * Math.PI);
@@ -1256,6 +1415,7 @@
       return regions.map(([region, share]) => ({
         Month: { value: `${2025 + Math.floor(index / 12)}-${month}-01` },
         Region: { value: region },
+        Source: { value: index >= 18 ? 'Estimate' : 'Official' },
         Sales: { value: Math.round((90 + index * 2.5 + season * 18) * share) },
         Profit: { value: Math.round((35 + index * 1.1 + season * 8) * share) },
         Orders: { value: Math.round((60 + index * 1.2 + season * 10) * share) },

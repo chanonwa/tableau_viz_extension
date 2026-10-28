@@ -47,6 +47,7 @@ window.ComboSettingsForm = (function () {
     const draft = JSON.parse(JSON.stringify(payload.state));
     const measures = payload.measures.map(measure => ({ ...measure }));
     const colorMembers = payload.color ? payload.color.members.map(member => ({ ...member })) : [];
+    const styleValues = payload.style ? payload.style.values.map(value => ({ ...value })) : [];
 
     function renderForm () {
       container.replaceChildren();
@@ -86,13 +87,45 @@ window.ComboSettingsForm = (function () {
         const memberRows = colorMembers.map(member => {
           const color = element('input', { type: 'color', value: member.color, 'aria-label': `${member.name} color` });
           color.addEventListener('input', () => { member.color = color.value; });
-          return element('label', { class: 'check color-member' }, [color, ` ${member.name}`]);
+          const fill = select([['solid', 'Solid'], ['hatched', 'Hatched'], ['light', 'Light']], member.fill, `${member.name} fill`);
+          fill.addEventListener('change', () => { member.fill = fill.value; });
+          return element('tr', {}, [
+            element('td', { class: 'measure-name', text: member.name, title: member.name }),
+            element('td', {}, [color]),
+            element('td', {}, [fill])
+          ]);
         });
         colorSection = section(`Color: ${payload.color.fieldName}`, [
-          element('p', { class: 'hint', text: 'Splits the first bar measure into one colored group per value.' }),
+          element('p', { class: 'hint', text: 'Splits the first bar measure into one colored group per value. Use Hatched or Light to mark values such as estimates.' }),
           element('div', { class: 'row' }, [element('span', { text: 'Bars' }), layout]),
-          element('div', { class: 'group-title', text: 'Colors' }),
-          element('div', { class: 'check-list' }, memberRows)
+          element('table', { class: 'measure-table' }, [
+            element('thead', {}, [element('tr', {}, ['Value', 'Color', 'Fill'].map(text => element('th', { text })))]),
+            element('tbody', {}, memberRows)
+          ])
+        ]);
+      }
+
+      // Bar Style encoding: a fill style per value, e.g. Official solid and Estimate hatched
+      let styleSection = null;
+      if (payload.style) {
+        const styleRows = styleValues.map(value => {
+          const fill = select([['solid', 'Solid'], ['hatched', 'Hatched'], ['light', 'Light']], value.fill, `${value.name} fill`);
+          fill.addEventListener('change', () => { value.fill = fill.value; });
+          return element('tr', {}, [
+            element('td', { class: 'measure-name', text: value.name, title: value.name }),
+            element('td', {}, [fill])
+          ]);
+        });
+        styleSection = section(`Bar Style: ${payload.style.fieldName}`, [
+          element('p', {
+            class: 'hint',
+            text: 'Sets the fill of the first bar measure for each value. Other bar measures follow it in categories with a single value. ' +
+              'Solid parts are stacked first, with shaded parts on top.'
+          }),
+          element('table', { class: 'measure-table' }, [
+            element('thead', {}, [element('tr', {}, ['Value', 'Fill'].map(text => element('th', { text })))]),
+            element('tbody', {}, styleRows)
+          ])
         ]);
       }
 
@@ -339,7 +372,11 @@ window.ComboSettingsForm = (function () {
           measure.lineStyle = 'solid';
           measure.color = measure.defaultColor;
         }
-        for (const member of colorMembers) member.color = member.defaultColor;
+        for (const member of colorMembers) {
+          member.color = member.defaultColor;
+          member.fill = 'solid';
+        }
+        for (const value of styleValues) value.fill = value.defaultFill;
         renderForm();
       });
       const cancel = element('button', { type: 'button', class: 'secondary', text: 'Cancel' });
@@ -351,9 +388,17 @@ window.ComboSettingsForm = (function () {
           draft.series[measure.name] = { mode: measure.mode, lineStyle: measure.lineStyle, color: measure.color };
         }
         // Keep colors chosen for members that are filtered out right now
+        draft.colorGroup.fills = draft.colorGroup.fills || {};
         for (const member of colorMembers) {
           if (member.color === member.defaultColor) delete draft.colorGroup.colors[member.name];
           else draft.colorGroup.colors[member.name] = member.color;
+          if (member.fill === 'solid') delete draft.colorGroup.fills[member.name];
+          else draft.colorGroup.fills[member.name] = member.fill;
+        }
+        draft.barStyle = draft.barStyle || { fills: {} };
+        for (const value of styleValues) {
+          if (value.fill === value.defaultFill) delete draft.barStyle.fills[value.name];
+          else draft.barStyle.fills[value.name] = value.fill;
         }
         handlers.onSave(draft);
       });
@@ -361,6 +406,7 @@ window.ComboSettingsForm = (function () {
       container.append(
         measuresSection,
         ...(colorSection ? [colorSection] : []),
+        ...(styleSection ? [styleSection] : []),
         valueAxisSection,
         categoryAxisSection,
         labelsSection,

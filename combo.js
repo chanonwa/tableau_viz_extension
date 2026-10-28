@@ -51,6 +51,10 @@
     // Bar Style reads a field the user put on Detail (Tableau allows only four custom encodings).
     // field: its name ('' = none); fills: value -> 'solid' | 'hatched' | 'light'
     barStyle: { field: '', fills: {} },
+    // Replaces a measure (e.g. a LOOKUP(..., -12) table calculation) with the category total of another
+    // measure N periods earlier, worked out by the extension. Table calculations break when Color or
+    // Detail split each category into parts that have no row N periods back.
+    priorPeriod: { target: '', basis: '', periods: 12 },
     // Mirrors Tableau's Edit Axis options; empty strings mean "Automatic"
     axis: {
       title: '',
@@ -132,6 +136,7 @@
         fills: { ...saved.colorGroup?.fills }
       },
       barStyle: { field: saved.barStyle?.field || '', fills: { ...saved.barStyle?.fills } },
+      priorPeriod: { ...DEFAULT_STATE.priorPeriod, ...saved.priorPeriod },
       forecast: { ...DEFAULT_STATE.forecast, ...saved.forecast }
     };
   }
@@ -439,6 +444,8 @@
       // Fields that can drive Bar Style, each with its values, so the dialog can switch between them
       style: {
         field: styleField?.name || '',
+        // Every column Tableau sent, shown in the dialog when nothing can be used for Bar Style
+        receivedFields: rawRows.length > 0 ? Object.keys(rawRows[0]) : [],
         candidates: getStyleCandidates().map(name => ({
           name,
           values: getDistinctValues(rawRows, name).slice(0, 50).map(style => ({
@@ -456,7 +463,7 @@
     state = mergeState(newState);
     saveState();
     // A different Bar Style field changes how rows split, so rebuild them
-    if (state.barStyle.field !== previousStyleField) rebuildRows();
+    rebuildRows();
     render();
   }
 
@@ -1382,7 +1389,35 @@
     const fieldName = state.barStyle.field;
     styleField = fieldName && getStyleCandidates().includes(fieldName) ? { name: fieldName } : undefined;
     setColorMembers(rawRows);
-    chartRows = sortRowsByDate(groupRowsByCategory(rawRows));
+    chartRows = applyPriorPeriod(sortRowsByDate(groupRowsByCategory(rawRows)));
+  }
+
+  // Sets the prior-period measure on each category to the basis measure's total N periods earlier.
+  // Categories whose earlier period isn't in the data keep Tableau's own value.
+  function applyPriorPeriod (rows) {
+    const { target, basis, periods } = state.priorPeriod;
+    const targetField = measureFields.find(field => field.name === target);
+    const basisField = measureFields.find(field => field.name === basis);
+    if (!targetField || !basisField || !categoryField || rows.length === 0) return rows;
+
+    const dates = rows.map(row => getCategoryDate(row[categoryField.name]));
+    if (dates.some(date => date === null)) return rows;
+    const monthIndex = date => date.getUTCFullYear() * 12 + date.getUTCMonth();
+    // Months between categories (1 for months, 3 for quarters, 12 for years)
+    const step = rows.length > 1 ? monthIndex(dates[1]) - monthIndex(dates[0]) : 1;
+    if (step <= 0) return rows;
+    const rowByMonth = new Map(rows.map((row, index) => [monthIndex(dates[index]), row]));
+
+    return rows.map((row, index) => {
+      const earlier = rowByMonth.get(monthIndex(dates[index]) - periods * step);
+      if (!earlier) return row;
+      const value = getNumericValue(earlier, basisField);
+      const updated = { ...row, [targetField.name]: value === null ? null : { value, formattedValue: numberFormat.format(value) } };
+      // Keep the Color / Bar Style breakdown of the original row
+      if (rowBreakdowns.has(row)) rowBreakdowns.set(updated, rowBreakdowns.get(row));
+      if (rowStyles.has(row)) rowStyles.set(updated, rowStyles.get(row));
+      return updated;
+    });
   }
 
   function setColorMembers (rows) {

@@ -109,6 +109,40 @@ window.ComboSettingsForm = (function () {
         ]);
       }
 
+      // Prior period: the extension recalculates a measure as another measure's category total N periods back
+      draft.priorPeriod = draft.priorPeriod || { target: '', basis: '', periods: 12 };
+      const prior = draft.priorPeriod;
+      const measureOptions = measures.map(measure => [measure.name, measure.name]);
+      const priorTarget = select([['', 'None'], ...measureOptions], measures.some(measure => measure.name === prior.target) ? prior.target : '', 'Measure to replace');
+      priorTarget.addEventListener('change', () => {
+        prior.target = priorTarget.value;
+        // Default the basis to the first measure that isn't the one being replaced
+        if (prior.target && !measures.some(measure => measure.name === prior.basis && measure.name !== prior.target)) {
+          prior.basis = measures.find(measure => measure.name !== prior.target)?.name || '';
+        }
+        renderForm();
+      });
+      const priorBasis = select(measureOptions, prior.basis, 'Based on measure');
+      priorBasis.addEventListener('change', () => { prior.basis = priorBasis.value; });
+      const priorPeriods = numberInput(prior.periods, 1, 60, 'Periods back');
+      priorPeriods.addEventListener('change', () => { prior.periods = clamp(priorPeriods.value, 1, 60, prior.periods); });
+      priorBasis.disabled = priorPeriods.disabled = !prior.target;
+      const priorSection = section('Prior period', [
+        element('p', {
+          class: 'hint',
+          text: 'Use this when a prior-period table calculation such as LOOKUP(SUM([Revenue]), -12) shows wrong totals here. ' +
+            'Fields on Color or Detail split each category, and parts with no row 12 periods back (e.g. Estimate) return nothing. ' +
+            'The extension instead takes the category total of the chosen measure N periods earlier. ' +
+            'Where that period isn\'t in the chart, Tableau\'s own value is kept.'
+        }),
+        element('div', { class: 'row' }, [
+          element('span', { text: 'Replace' }), priorTarget,
+          element('span', { text: 'with' }), priorBasis,
+          element('span', { text: 'from' }), priorPeriods,
+          element('span', { text: 'periods earlier' })
+        ])
+      ]);
+
       // Bar Style: a field on Detail (e.g. Official / Estimate) sets the fill of each part of the primary bar
       draft.barStyle = draft.barStyle || { field: '', fills: {} };
       const styleFieldSelect = select(
@@ -129,7 +163,8 @@ window.ComboSettingsForm = (function () {
         element('p', {
           class: 'hint',
           text: styleCandidates.length === 0
-            ? 'Drag a field such as Source (Official / Estimate) onto Detail on the Marks card, then choose it here.'
+            ? 'Drag a field such as Source (Official / Estimate) onto Detail on the Marks card, then choose it here. ' +
+              `Fields received from Tableau: ${(payload.style?.receivedFields || []).join(', ') || 'none'}.`
             : 'Choose a field on Detail to set the fill of the first bar measure for each of its values. ' +
               'Other bar measures follow it in categories with a single value. Solid parts are stacked first, with shaded parts on top.'
         }),
@@ -421,6 +456,7 @@ window.ComboSettingsForm = (function () {
 
       container.append(
         measuresSection,
+        priorSection,
         ...(colorSection ? [colorSection] : []),
         styleSection,
         valueAxisSection,

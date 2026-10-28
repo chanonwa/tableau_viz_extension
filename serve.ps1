@@ -35,6 +35,8 @@ try {
 
         $bytes = [System.IO.File]::ReadAllBytes($filePath)
         $context.Response.ContentType = $contentType
+        # Tableau's embedded browser caches aggressively; always serve the latest files while developing
+        $context.Response.Headers.Add('Cache-Control', 'no-store')
         $context.Response.ContentLength64 = $bytes.Length
         $context.Response.OutputStream.Write($bytes, 0, $bytes.Length)
         $context.Response.Close()

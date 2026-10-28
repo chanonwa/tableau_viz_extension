@@ -2,7 +2,16 @@
 
 A local Tableau Viz Extension starter that displays one category and up to 50 numeric measures as a single chart. Each measure can be switched between bars and a line. Each line can independently use a solid, dashed, dotted, or dash-dot pattern; all series share one value axis.
 
-## Run locally
+This folder contains two extensions that share one web server:
+
+| Extension | Manifest | Page |
+| --- | --- | --- |
+| Multi-Measure Combo Chart | `combo.trex` | `index.html` |
+| Anomaly Detection | `anomaly.trex` | `anomaly.html` |
+
+## Run the server locally
+
+Use this for Tableau Desktop on your own computer. Tableau Desktop allows extensions from `http://localhost`, so no certificate is needed.
 
 1. Open PowerShell in this folder and run:
 
@@ -10,9 +19,23 @@ A local Tableau Viz Extension starter that displays one category and up to 50 nu
    .\serve.ps1
    ```
 
-2. In a browser, open `http://localhost:8765/`. Outside Tableau, the page shows sample data so you can preview the chart and try changing series types.
-3. In Tableau Desktop, open a worksheet and add the extension from `combo.trex` (use the Viz Extension option on the Marks card).
-4. Put one discrete field or date (discrete or continuous) on **Category** and one or more numeric measures on **Measures**. Change each measure's mark type (bar or line) and line style in **Format Extension**.
+   It prints `Serving this extension at http://localhost:8765/` and keeps running until you press **Ctrl+C** or close the window. Keep it running the whole time you use the extensions.
+
+   If Windows blocks the script ("running scripts is disabled on this system"), run it for this session only with:
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\serve.ps1
+   ```
+
+   On macOS or Linux, or without PowerShell, any static file server on port 8765 works, for example `python3 -m http.server 8765` from this folder.
+
+2. Check it in a browser: `http://localhost:8765/` (combo chart) and `http://localhost:8765/anomaly.html` (anomaly detection). Outside Tableau, both pages show sample data.
+3. In Tableau Desktop, open a worksheet, open the mark type dropdown on the Marks card, and choose **Add Extension** > **Access Local Viz Extensions**. Pick `combo.trex` or `anomaly.trex`.
+4. For the combo chart, put one discrete field or date (discrete or continuous) on **Category** and one or more numeric measures on **Measures**. Change each measure's mark type (bar or line) and line style in **Format Extension**.
+
+Tableau reads a manifest only when the extension is added. After a change to a `.trex` file (for example a new encoding), remove the extension from the Marks card and add it again. Changes to the HTML or JavaScript only need the extension to reload.
+
+To use a different port, change `http://localhost:8765/` in `serve.ps1` and the `<url>` in both `.trex` files.
 
 The extension uses Tableau's summary data and refreshes when the worksheet data changes. The value axis is intentionally shared, so measures with very different scales may be hard to compare. Date categories are shown as month and year (for example "May 2026") and sorted oldest to newest.
 
@@ -64,12 +87,58 @@ Each panel lists the trend (change from first to last, slope per period), the ra
 
 Statistics include points, mean, median, standard deviation, min, max, total, first-to-last change (dates only), seasonality strength, and anomaly rate. The *score* is the deviation divided by the method's spread (standard deviation, IQR, or robust MAD-based sigma). The analysis runs on the worksheet's aggregated summary data after filters. Anomaly flags stay inside the extension, so they can't be used as a filter on other sheets.
 
-## Requirements and hosting
+## Host on a server (Tableau Server or Tableau Cloud)
 
-- Tableau Desktop with Viz Extensions enabled.
-- PowerShell on Windows for the included local static server. It binds to `localhost:8765`.
-- The `.trex` manifest points at `http://localhost:8765/index.html`; keep `serve.ps1` running while using the extension.
+A workbook published to Tableau Server or Tableau Cloud can't reach `localhost` on your computer, and the server only loads extensions over **HTTPS**. Host the files at an HTTPS address, point the manifests at it, and allow that address on the site.
 
-For Tableau Server or Tableau Cloud, host the page, JavaScript, and Tableau API runtime at an HTTPS URL, update the URL in `combo.trex`, and configure the site to allow the extension. Do not publish the local HTTP URL.
+### 1. Host the files over HTTPS
+
+The extensions are static files with no backend, so any static web host works. Upload the whole folder, keeping the `vendor` subfolder. `README.md` and `serve.ps1` aren't needed on the host.
+
+**Option A: GitHub Pages (free, from this repository).** The repository is public, so GitHub can serve it directly:
+
+1. On GitHub, open the repository's **Settings** > **Pages**.
+2. Under **Build and deployment**, choose **Deploy from a branch**, select branch `main` and folder `/ (root)`, and save.
+3. After a minute or two, the files are available at `https://chanonwa.github.io/tableau_viz_extension/`. Check that `https://chanonwa.github.io/tableau_viz_extension/index.html` shows the sample chart.
+
+Every push to `main` republishes the site, so viewers get updates the next time the extension loads.
+
+**Option B: your own web server.** Copy the folder to any HTTPS web server or static hosting service (IIS, nginx, Apache, Azure Static Web Apps, Amazon S3 with CloudFront, and so on). It must have a valid certificate and serve `.js` files as JavaScript. Note the base URL, for example `https://extensions.example.com/combo/`.
+
+### 2. Point the manifests at the hosted URL
+
+Make server copies of the manifests, so the originals keep working for local development. For example, copy `combo.trex` to `combo.server.trex` and change its `<url>`:
+
+```xml
+<source-location>
+  <url>https://chanonwa.github.io/tableau_viz_extension/index.html</url>
+</source-location>
+```
+
+Do the same for `anomaly.trex`, pointing at `.../anomaly.html`. The settings dialogs (`settings.html`, `anomaly-settings.html`) are found relative to the page, so they need no change.
+
+### 3. Allow the extension on the site
+
+A site administrator does this once per site:
+
+1. On Tableau Server or Tableau Cloud, open the site's **Settings** > **Extensions**.
+2. Make sure extensions (including viz extensions) are allowed to run on the site.
+3. Add the hosting address (for example `https://chanonwa.github.io`) to the safe list. Allow it full data access, because the extensions read the worksheet's summary data.
+
+On Tableau Server, the server administrator may also need to enable extensions for the whole server first.
+
+### 4. Build and publish the workbook
+
+1. In Tableau Desktop, add the extension from the server manifest (`combo.server.trex` or `anomaly.server.trex`), so the workbook stores the HTTPS URL rather than `localhost`.
+2. Build the worksheet, then publish the workbook to Tableau Server or Tableau Cloud as usual.
+3. Open the published workbook in a browser to check that the chart loads. If it shows a blank area or an extension warning, check that the URL in the manifest opens in a browser and that its address is on the site's safe list.
+
+Settings made in **Format Extension** are saved in the workbook, so they travel with it when you publish.
+
+## Requirements
+
+- Tableau Desktop, Tableau Server, or Tableau Cloud with viz extensions (Tableau 2024.2 or later).
+- For local use: PowerShell on Windows for `serve.ps1` (it binds to `localhost:8765`), or any other static file server on that port.
+- For Tableau Server or Tableau Cloud: an HTTPS host for the files, and the address on the site's extension safe list.
 
 The vendored Tableau Extensions API runtime is from the official [Tableau Extensions API repository](https://github.com/tableau/extensions-api).

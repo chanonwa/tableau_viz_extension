@@ -55,6 +55,9 @@
     // measure N periods earlier, worked out by the extension. Table calculations break when Color or
     // Detail split each category into parts that have no row N periods back.
     priorPeriod: { target: '', basis: '', periods: 12 },
+    // Draws only categories where this field (e.g. a True/False date-range test on Detail) is True.
+    // Unlike a Filters-shelf filter, hidden categories still reach the extension, so Prior period can use them.
+    visibility: { field: '' },
     // Mirrors Tableau's Edit Axis options; empty strings mean "Automatic"
     axis: {
       title: '',
@@ -137,6 +140,7 @@
       },
       barStyle: { field: saved.barStyle?.field || '', fills: { ...saved.barStyle?.fills } },
       priorPeriod: { ...DEFAULT_STATE.priorPeriod, ...saved.priorPeriod },
+      visibility: { ...DEFAULT_STATE.visibility, ...saved.visibility },
       forecast: { ...DEFAULT_STATE.forecast, ...saved.forecast }
     };
   }
@@ -446,6 +450,8 @@
         field: styleField?.name || '',
         // Every column Tableau sent, shown in the dialog when nothing can be used for Bar Style
         receivedFields: rawRows.length > 0 ? Object.keys(rawRows[0]) : [],
+        // Fields on Detail or Tooltip, also offered for "Show only categories where … is True"
+        visibilityCandidates: getStyleCandidates(),
         candidates: getStyleCandidates().map(name => ({
           name,
           values: getDistinctValues(rawRows, name).slice(0, 50).map(style => ({
@@ -1258,7 +1264,7 @@
       const measureNames = new Set(measureFields.map(field => field.name));
       const extraFieldNames = Object.keys(chartRows[0]).filter(name =>
         name !== categoryField.name && name !== labelField?.name && name !== colorField?.name &&
-          name !== styleField?.name && !measureNames.has(name)
+          name !== styleField?.name && name !== state.visibility.field && !measureNames.has(name)
       );
       const getTooltipContent = index => {
         if (index >= chartRows.length) {
@@ -1389,7 +1395,17 @@
     const fieldName = state.barStyle.field;
     styleField = fieldName && getStyleCandidates().includes(fieldName) ? { name: fieldName } : undefined;
     setColorMembers(rawRows);
-    chartRows = applyPriorPeriod(sortRowsByDate(groupRowsByCategory(rawRows)));
+    chartRows = applyVisibility(applyPriorPeriod(sortRowsByDate(groupRowsByCategory(rawRows))));
+  }
+
+  // Keeps categories whose visibility field is True. Runs after Prior period, so hidden categories still feed it.
+  function applyVisibility (rows) {
+    const fieldName = state.visibility.field;
+    if (!fieldName || rows.length === 0 || !(fieldName in rows[0])) return rows;
+    return rows.filter(row => {
+      const value = getValue(row[fieldName]);
+      return value === true || String(value).toLowerCase() === 'true' || getLabel(row[fieldName]).toLowerCase() === 'true';
+    });
   }
 
   // Sets the prior-period measure on each category to the basis measure's total N periods earlier.

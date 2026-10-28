@@ -143,6 +143,25 @@ window.ComboSettingsForm = (function () {
         ])
       ]);
 
+      // Visible categories: hide categories with a True/False field on Detail instead of a Filters-shelf filter
+      draft.visibility = draft.visibility || { field: '' };
+      const visibilityCandidates = payload.style?.visibilityCandidates || [];
+      const visibilityField = select(
+        [['', 'None (show all)'], ...visibilityCandidates.map(name => [name, name])],
+        visibilityCandidates.includes(draft.visibility.field) ? draft.visibility.field : '',
+        'Show only categories where this field is True'
+      );
+      visibilityField.disabled = visibilityCandidates.length === 0;
+      visibilityField.addEventListener('change', () => { draft.visibility.field = visibilityField.value; });
+      const visibilitySection = section('Visible categories', [
+        element('p', {
+          class: 'hint',
+          text: 'Hides categories here instead of on the Filters shelf, so hidden months still feed Prior period. ' +
+            'Put a True/False field such as In Date Range on Detail (not Filters), then choose it here.'
+        }),
+        element('div', { class: 'row' }, [element('span', { text: 'Show only where' }), visibilityField, element('span', { text: 'is True' })])
+      ]);
+
       // Bar Style: a field on Detail (e.g. Official / Estimate) sets the fill of each part of the primary bar
       draft.barStyle = draft.barStyle || { field: '', fills: {} };
       const styleFieldSelect = select(
@@ -457,6 +476,7 @@ window.ComboSettingsForm = (function () {
       container.append(
         measuresSection,
         priorSection,
+        visibilitySection,
         ...(colorSection ? [colorSection] : []),
         styleSection,
         valueAxisSection,

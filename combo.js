@@ -48,8 +48,9 @@
     // Field on the Color encoding splits the primary (first) bar measure
     // fills: member -> 'solid' | 'hatched' | 'light' (solid when missing)
     colorGroup: { layout: 'stacked', colors: {}, fills: {} },
-    // Field on the Bar Style encoding: value -> 'solid' | 'hatched' | 'light'
-    barStyle: { fills: {} },
+    // Bar Style reads a field the user put on Detail (Tableau allows only four custom encodings).
+    // field: its name ('' = none); fills: value -> 'solid' | 'hatched' | 'light'
+    barStyle: { field: '', fills: {} },
     // Mirrors Tableau's Edit Axis options; empty strings mean "Automatic"
     axis: {
       title: '',
@@ -97,13 +98,15 @@
   const settingsOverlay = document.getElementById('settings-overlay');
   const settingsFormElement = document.getElementById('settings-form');
 
+  // Summary data rows as Tableau returns them, before they are combined per category
+  let rawRows = [];
   let chartRows = [];
   let categoryField;
   let measureFields = [];
   let labelField;
   let colorField;
   let colorMembers = [];
-  // Field on the Bar Style encoding (e.g. Official / Estimate) and its values
+  // Field chosen for Bar Style (e.g. Official / Estimate on Detail) and its values
   let styleField;
   let styleValues = [];
   // Every Color/Bar Style combination in the data: { key, member, style }
@@ -128,7 +131,7 @@
         colors: { ...saved.colorGroup?.colors },
         fills: { ...saved.colorGroup?.fills }
       },
-      barStyle: { fills: { ...saved.barStyle?.fills } },
+      barStyle: { field: saved.barStyle?.field || '', fills: { ...saved.barStyle?.fills } },
       forecast: { ...DEFAULT_STATE.forecast, ...saved.forecast }
     };
   }
@@ -433,22 +436,27 @@
             }))
           }
         : null,
-      style: styleField && styleValues.length > 0
-        ? {
-            fieldName: styleField.name,
-            values: styleValues.map(style => ({
-              name: style,
-              fill: getStyleFill(style),
-              defaultFill: getDefaultStyleFill(style)
-            }))
-          }
-        : null
+      // Fields that can drive Bar Style, each with its values, so the dialog can switch between them
+      style: {
+        field: styleField?.name || '',
+        candidates: getStyleCandidates().map(name => ({
+          name,
+          values: getDistinctValues(rawRows, name).slice(0, 50).map(style => ({
+            name: style,
+            fill: getStyleFill(style),
+            defaultFill: getDefaultStyleFill(style)
+          }))
+        }))
+      }
     };
   }
 
   function applySettings (newState) {
+    const previousStyleField = state.barStyle.field;
     state = mergeState(newState);
     saveState();
+    // A different Bar Style field changes how rows split, so rebuild them
+    if (state.barStyle.field !== previousStyleField) rebuildRows();
     render();
   }
 
@@ -1357,12 +1365,29 @@
   }
 
   // Members are sorted alphabetically, as in Tableau's default color legend
+  function getDistinctValues (rows, fieldName) {
+    return [...new Set(rows.map(row => getLabel(row[fieldName])))]
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  }
+
+  // Columns in the summary data that aren't on an encoding, i.e. fields on Detail or Tooltip
+  function getStyleCandidates () {
+    if (rawRows.length === 0) return [];
+    const used = new Set([categoryField?.name, labelField?.name, colorField?.name, ...measureFields.map(field => field.name)]);
+    return Object.keys(rawRows[0]).filter(name => !used.has(name));
+  }
+
+  // Splits rows by Color and the chosen Bar Style field, then combines them per category
+  function rebuildRows () {
+    const fieldName = state.barStyle.field;
+    styleField = fieldName && getStyleCandidates().includes(fieldName) ? { name: fieldName } : undefined;
+    setColorMembers(rawRows);
+    chartRows = sortRowsByDate(groupRowsByCategory(rawRows));
+  }
+
   function setColorMembers (rows) {
-    const distinctSorted = field => field
-      ? [...new Set(rows.map(row => getLabel(row[field.name])))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
-      : [];
-    colorMembers = distinctSorted(colorField);
-    styleValues = distinctSorted(styleField);
+    colorMembers = colorField ? getDistinctValues(rows, colorField.name) : [];
+    styleValues = styleField ? getDistinctValues(rows, styleField.name) : [];
     const seen = new Map();
     for (const row of rows) {
       const segment = getRowSegment(row);
@@ -1382,9 +1407,8 @@
         measureFields = encodings.measures || [];
         labelField = encodings.label?.[0];
         colorField = encodings.colorgroup?.[0];
-        styleField = encodings.barstyle?.[0];
-        setColorMembers(rows);
-        chartRows = sortRowsByDate(groupRowsByCategory(rows));
+        rawRows = rows;
+        rebuildRows();
         render();
       } catch (error) {
         showMessage(`Unable to load Tableau data: ${error.message || error}`);
@@ -1405,7 +1429,7 @@
     ];
     labelField = undefined;
     colorField = { name: 'Region' };
-    styleField = { name: 'Source' };
+    state.barStyle.field = 'Source';
     // Each month is split across regions so the Color grouping can be previewed;
     // the last six months are estimates so the Bar Style can be previewed.
     const regions = [['East', 0.4], ['West', 0.35], ['North', 0.25]];
@@ -1422,8 +1446,8 @@
         Target: { value: Math.round((75 + index * 2) * share) }
       }));
     }).flat();
-    setColorMembers(rows);
-    chartRows = sortRowsByDate(groupRowsByCategory(rows));
+    rawRows = rows;
+    rebuildRows();
     state.forecast.show = true;
     render();
   }

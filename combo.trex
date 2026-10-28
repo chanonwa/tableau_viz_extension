@@ -41,14 +41,6 @@
       <fields max-count="1"/>
       <tooltip>Dimension that splits the primary bar measure into colored groups</tooltip>
     </encoding>
-    <encoding id="barstyle">
-      <display-name>Bar Style</display-name>
-      <role-spec>
-        <role-type>discrete-dimension</role-type>
-      </role-spec>
-      <fields max-count="1"/>
-      <tooltip>Dimension such as Official / Estimate that sets the fill style of the bars</tooltip>
-    </encoding>
     <encoding id="label">
       <display-name>Text</display-name>
       <role-spec>

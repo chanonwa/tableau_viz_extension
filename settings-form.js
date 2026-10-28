@@ -47,7 +47,11 @@ window.ComboSettingsForm = (function () {
     const draft = JSON.parse(JSON.stringify(payload.state));
     const measures = payload.measures.map(measure => ({ ...measure }));
     const colorMembers = payload.color ? payload.color.members.map(member => ({ ...member })) : [];
-    const styleValues = payload.style ? payload.style.values.map(value => ({ ...value })) : [];
+    // Bar Style can use any field on Detail or Tooltip; each candidate carries its values
+    const styleCandidates = payload.style
+      ? payload.style.candidates.map(candidate => ({ name: candidate.name, values: candidate.values.map(value => ({ ...value })) }))
+      : [];
+    const getStyleValues = () => styleCandidates.find(candidate => candidate.name === draft.barStyle.field)?.values || [];
 
     function renderForm () {
       container.replaceChildren();
@@ -105,29 +109,39 @@ window.ComboSettingsForm = (function () {
         ]);
       }
 
-      // Bar Style encoding: a fill style per value, e.g. Official solid and Estimate hatched
-      let styleSection = null;
-      if (payload.style) {
-        const styleRows = styleValues.map(value => {
-          const fill = select([['solid', 'Solid'], ['hatched', 'Hatched'], ['light', 'Light']], value.fill, `${value.name} fill`);
-          fill.addEventListener('change', () => { value.fill = fill.value; });
-          return element('tr', {}, [
-            element('td', { class: 'measure-name', text: value.name, title: value.name }),
-            element('td', {}, [fill])
-          ]);
-        });
-        styleSection = section(`Bar Style: ${payload.style.fieldName}`, [
-          element('p', {
-            class: 'hint',
-            text: 'Sets the fill of the first bar measure for each value. Other bar measures follow it in categories with a single value. ' +
-              'Solid parts are stacked first, with shaded parts on top.'
-          }),
-          element('table', { class: 'measure-table' }, [
-            element('thead', {}, [element('tr', {}, ['Value', 'Fill'].map(text => element('th', { text })))]),
-            element('tbody', {}, styleRows)
-          ])
+      // Bar Style: a field on Detail (e.g. Official / Estimate) sets the fill of each part of the primary bar
+      draft.barStyle = draft.barStyle || { field: '', fills: {} };
+      const styleFieldSelect = select(
+        [['', 'None'], ...styleCandidates.map(candidate => [candidate.name, candidate.name])],
+        styleCandidates.some(candidate => candidate.name === draft.barStyle.field) ? draft.barStyle.field : '',
+        'Bar Style field'
+      );
+      styleFieldSelect.addEventListener('change', () => { draft.barStyle.field = styleFieldSelect.value; renderForm(); });
+      const styleRows = getStyleValues().map(value => {
+        const fill = select([['solid', 'Solid'], ['hatched', 'Hatched'], ['light', 'Light']], value.fill, `${value.name} fill`);
+        fill.addEventListener('change', () => { value.fill = fill.value; });
+        return element('tr', {}, [
+          element('td', { class: 'measure-name', text: value.name, title: value.name }),
+          element('td', {}, [fill])
         ]);
-      }
+      });
+      const styleSection = section('Bar Style', [
+        element('p', {
+          class: 'hint',
+          text: styleCandidates.length === 0
+            ? 'Drag a field such as Source (Official / Estimate) onto Detail on the Marks card, then choose it here.'
+            : 'Choose a field on Detail to set the fill of the first bar measure for each of its values. ' +
+              'Other bar measures follow it in categories with a single value. Solid parts are stacked first, with shaded parts on top.'
+        }),
+        element('div', { class: 'row' }, [element('span', { text: 'Field' }), styleFieldSelect]),
+        ...(styleRows.length > 0
+          ? [element('table', { class: 'measure-table' }, [
+              element('thead', {}, [element('tr', {}, ['Value', 'Fill'].map(text => element('th', { text })))]),
+              element('tbody', {}, styleRows)
+            ])]
+          : [])
+      ]);
+      styleFieldSelect.disabled = styleCandidates.length === 0;
 
       // Value axis, following Tableau's Edit Axis dialog
       const axis = draft.axis;
@@ -376,7 +390,9 @@ window.ComboSettingsForm = (function () {
           member.color = member.defaultColor;
           member.fill = 'solid';
         }
-        for (const value of styleValues) value.fill = value.defaultFill;
+        for (const candidate of styleCandidates) {
+          for (const value of candidate.values) value.fill = value.defaultFill;
+        }
         renderForm();
       });
       const cancel = element('button', { type: 'button', class: 'secondary', text: 'Cancel' });
@@ -395,8 +411,8 @@ window.ComboSettingsForm = (function () {
           if (member.fill === 'solid') delete draft.colorGroup.fills[member.name];
           else draft.colorGroup.fills[member.name] = member.fill;
         }
-        draft.barStyle = draft.barStyle || { fills: {} };
-        for (const value of styleValues) {
+        draft.barStyle.fills = draft.barStyle.fills || {};
+        for (const value of getStyleValues()) {
           if (value.fill === value.defaultFill) delete draft.barStyle.fills[value.name];
           else draft.barStyle.fills[value.name] = value.fill;
         }
@@ -406,7 +422,7 @@ window.ComboSettingsForm = (function () {
       container.append(
         measuresSection,
         ...(colorSection ? [colorSection] : []),
-        ...(styleSection ? [styleSection] : []),
+        styleSection,
         valueAxisSection,
         categoryAxisSection,
         labelsSection,

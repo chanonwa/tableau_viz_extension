@@ -427,6 +427,7 @@
 
   // Settings: the Tableau "Format Extension" dialog (Marks card), or an in-chart panel as a fallback.
   function getSettingsPayload () {
+    const candidates = getStyleCandidates();
     return {
       state,
       defaultState: mergeState({}),
@@ -451,8 +452,8 @@
         // Every column Tableau sent, shown in the dialog when nothing can be used for Bar Style
         receivedFields: rawRows.length > 0 ? Object.keys(rawRows[0]) : [],
         // Fields on Detail or Tooltip, also offered for "Show only categories where … is True"
-        visibilityCandidates: getStyleCandidates(),
-        candidates: getStyleCandidates().map(name => ({
+        visibilityCandidates: candidates,
+        candidates: candidates.map(name => ({
           name,
           values: getDistinctValues(rawRows, name).slice(0, 50).map(style => ({
             name: style,
@@ -465,7 +466,6 @@
   }
 
   function applySettings (newState) {
-    const previousStyleField = state.barStyle.field;
     state = mergeState(newState);
     saveState();
     // A different Bar Style field changes how rows split, so rebuild them
@@ -617,9 +617,9 @@
     return step > 0 ? { dates, step } : null;
   }
 
+  // render() clears the forecast note before calling this
   function getForecast () {
     const settings = state.forecast;
-    forecastNoteElement.textContent = '';
     if (!settings.show) return null;
 
     const dateInfo = getDateInfo();
@@ -994,6 +994,17 @@
       ? segments.map(segment => [segment.key, labelFilter(chartRows.map(row => getBreakdown(row, primaryBar).get(segment.key)?.value ?? null))])
       : []);
 
+    const drawTotalLabel = (row, categoryIndex, barIndex, endY) => {
+      const upward = endY <= zeroY;
+      addLabel(
+        plot,
+        formatLabel(getNumericValue(row, primaryMeasure), getLabel(row[primaryMeasure.name])),
+        barX(categoryIndex, barIndex) + barSpan(barIndex) / 2,
+        upward ? endY - 4 : endY + labelFontSize + 2,
+        getSeries(primaryMeasure).color
+      );
+    };
+
     const drawSplitBars = (row, categoryIndex, barIndex) => {
       const breakdown = getBreakdown(row, primaryBar);
       // Running stack heights per column
@@ -1041,17 +1052,6 @@
         const bottom = Math.min(0, ...[...stacks.values()].map(stack => stack.negative));
         drawTotalLabel(row, categoryIndex, barIndex, top !== 0 ? y(top) : bottom !== 0 ? y(bottom) : zeroY);
       }
-    };
-
-    const drawTotalLabel = (row, categoryIndex, barIndex, endY) => {
-      const upward = endY <= zeroY;
-      addLabel(
-        plot,
-        formatLabel(getNumericValue(row, primaryMeasure), getLabel(row[primaryMeasure.name])),
-        barX(categoryIndex, barIndex) + barSpan(barIndex) / 2,
-        upward ? endY - 4 : endY + labelFontSize + 2,
-        getSeries(primaryMeasure).color
-      );
     };
 
     chartRows.forEach((row, categoryIndex) => {
@@ -1503,7 +1503,12 @@
     render();
   }
 
-  window.addEventListener('resize', render);
+  // Redraw at most once per frame while the sheet is resized
+  let resizeFrame = 0;
+  window.addEventListener('resize', () => {
+    cancelAnimationFrame(resizeFrame);
+    resizeFrame = requestAnimationFrame(render);
+  });
 
   if (inTableau) {
     tableau.extensions.initializeAsync({ configure: openSettings })

@@ -297,5 +297,5 @@ window.AnomalyDetect = (function () {
     return { ...base, points };
   }
 
-  return { detect, summarize, METHOD_LABELS, THRESHOLDS, SEASON_STRENGTH };
+  return { detect, summarize, SEASON_STRENGTH };
 })();

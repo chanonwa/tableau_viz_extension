@@ -424,7 +424,7 @@
     }
   }
 
-  function setHover (index, event) {
+  function setHover (index) {
     hoverIndex = index;
     applyEmphasis();
     setCenterDetail(index === null ? null : items[index]);
@@ -483,7 +483,7 @@
 
   function addInteractions (node, index) {
     node.dataset.index = index;
-    node.addEventListener('mouseenter', event => setHover(index, event));
+    node.addEventListener('mouseenter', () => setHover(index));
     node.addEventListener('mousemove', event => moveHover(index, event));
     node.addEventListener('mouseleave', () => setHover(null));
     node.addEventListener('click', event => toggleSelect(index, event));
@@ -512,7 +512,10 @@
   // A slice as a path. Rounded corners are drawn by shrinking the shape and stroking it in its own color with
   // round joins; gaps are drawn as a stroke in the gap color.
   function slicePath (cx, cy, outer, inner, start, end, color, gap = state.gap) {
-    const corner = Math.min(state.cornerRadius, (outer - inner) / 2 - 0.5);
+    // Rounding is limited by the ring's thickness and by the slice's width at its narrow (inner) edge,
+    // so a thin slice stays thin
+    const narrowWidth = (end - start) * Math.max(inner, (outer + inner) / 4);
+    const corner = Math.min(state.cornerRadius, (outer - inner) / 2 - 0.5, (narrowWidth - gap) / 2);
     if (corner <= 0) {
       return createSvgElement('path', {
         d: arcPath(cx, cy, outer, inner, start, end),
@@ -524,7 +527,7 @@
     }
     const inset = corner + gap / 2;
     const middle = Math.max(1, (outer + inner) / 2);
-    const angleInset = Math.min(inset / middle, (end - start) / 2 - 1e-3);
+    const angleInset = Math.max(0, Math.min(inset / middle, (end - start) / 2 - 1e-3));
     return createSvgElement('path', {
       d: arcPath(cx, cy, outer - corner, inner > 0 ? inner + corner : Math.min(corner, outer / 3), start + angleInset, end - angleInset),
       fill: color,
@@ -536,15 +539,14 @@
 
   // Center and radius that fit an arc from start to start + span in the box, leaving pad around it
   function fitArc (width, height, padX, padY, start, span, innerRatio) {
-    const points = [[0, 0]];
+    // A pie's slices meet at the center; a donut is bounded by its outer and inner edges
+    const points = innerRatio > 0 ? [] : [[0, 0]];
     const steps = Math.max(2, Math.ceil(span / (Math.PI / 90)));
     for (let step = 0; step <= steps; step++) {
       const angle = start + span * step / steps;
       points.push([Math.sin(angle), -Math.cos(angle)]);
       if (innerRatio > 0) points.push([Math.sin(angle) * innerRatio, -Math.cos(angle) * innerRatio]);
     }
-    // The center only bounds a pie or a ring that isn't closed
-    if (innerRatio > 0 && span >= Math.PI * 2 - 1e-6) points.shift();
     const xs = points.map(point => point[0]);
     const ys = points.map(point => point[1]);
     const [minX, maxX, minY, maxY] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
@@ -564,7 +566,7 @@
   }
 
   // Total or KPI, caption, and comparison in the hole; the hovered slice replaces them while hovered
-  function drawCenter (svg, cx, cy, inner) {
+  function drawCenter (parent, cx, cy, inner) {
     setCenterDetail = () => {};
     const center = state.center;
     if (!center.show || inner < 24) return;
@@ -590,22 +592,20 @@
     if (lines.length === 0) return;
 
     const group = createSvgElement('g', { class: 'center' });
-    const nodes = [];
+    // Stacks the lines, centered vertically on cy
     const layout = list => {
       const height = list.reduce((sum, line) => sum + line.size * 1.15, 0);
       let y = cy - height / 2;
       group.replaceChildren();
-      nodes.length = 0;
       for (const line of list) {
-        const node = addText(group, line.className, cx, y + line.size * 0.575, line.text, {
+        addText(group, line.className, cx, y + line.size * 0.575, line.text, {
           'text-anchor': 'middle', 'font-size': line.size.toFixed(1), fill: line.color
         });
-        nodes.push(node);
         y += line.size * 1.15;
       }
     };
     layout(lines);
-    svg.appendChild(group);
+    parent.appendChild(group);
 
     if (center.hoverDetail) {
       setCenterDetail = item => {
@@ -630,10 +630,14 @@
     return outside ? '#5f6368' : getContrastColor(item.color);
   }
 
+  // Start angle in radians, and 1 for clockwise or -1 for counterclockwise
+  function getDirection () {
+    return { origin: state.startAngle * Math.PI / 180, sign: state.direction === 'counterclockwise' ? -1 : 1 };
+  }
+
   // Angles of each slice, honoring the arc and direction: [{ start, end, middle }] with start < end
   function getSliceAngles (span) {
-    const sign = state.direction === 'counterclockwise' ? -1 : 1;
-    const origin = state.startAngle * Math.PI / 180;
+    const { origin, sign } = getDirection();
     let cumulative = 0;
     return items.map(item => {
       const a = origin + sign * cumulative;
@@ -643,7 +647,7 @@
     });
   }
 
-  function drawPie (svg, slices, labelLayer, width, height) {
+  function drawPie (slices, labelLayer, width, height) {
     const labels = state.labels;
     const fontSize = labels.fontSize;
     const outside = labels.show && labels.position === 'outside';
@@ -655,8 +659,7 @@
     const span = Math.max(30, Math.min(360, state.arc)) * Math.PI / 180;
     const innerRatio = state.chartType === 'pie' ? 0 : state.innerRadius / 100;
     const angles = getSliceAngles(span);
-    const sign = state.direction === 'counterclockwise' ? -1 : 1;
-    const origin = state.startAngle * Math.PI / 180;
+    const { origin, sign } = getDirection();
     const { outer, cx, cy } = fitArc(width, height, padX, padY, Math.min(origin, origin + sign * span), span, innerRatio);
     const inner = outer * innerRatio;
 
@@ -703,15 +706,14 @@
   }
 
   // One ring per member, outermost first; the longest bar spans the chosen angle
-  function drawRadial (svg, slices, labelLayer, width, height) {
+  function drawRadial (slices, labelLayer, width, height) {
     const outer = Math.max(10, Math.min(width, height) / 2 - 4);
     const inner = outer * state.innerRadius / 100;
     const cx = width / 2;
     const cy = height / 2;
     const band = (outer - inner) / items.length;
     const thickness = Math.max(1, band - state.gap);
-    const sign = state.direction === 'counterclockwise' ? -1 : 1;
-    const origin = state.startAngle * Math.PI / 180;
+    const { origin, sign } = getDirection();
     const sweep = state.sweep * Math.PI / 180;
     const max = Math.max(...items.map(item => item.value));
     const labels = state.labels;
@@ -724,9 +726,7 @@
       if (state.display.track) {
         const trackEnd = origin + sign * sweep;
         // Rings are already separated by their band, so they need no gap stroke
-        const track = slicePath(cx, cy, ringOuter, ringInner, Math.min(origin, trackEnd), Math.max(origin, trackEnd), '#f1f3f4', 0);
-        track.classList.add('track');
-        slices.appendChild(track);
+        slices.appendChild(slicePath(cx, cy, ringOuter, ringInner, Math.min(origin, trackEnd), Math.max(origin, trackEnd), '#f1f3f4', 0));
       }
       const bar = slicePath(cx, cy, ringOuter, ringInner, Math.min(origin, end), Math.max(origin, end), item.color, 0);
       bar.classList.add('slice');
@@ -744,7 +744,7 @@
           'text-anchor': sign > 0 ? 'end' : 'start',
           'font-size': fontSize.toFixed(1),
           'font-weight': labels.bold ? 600 : 400,
-          fill: labels.colorMode === 'custom' ? labels.color : labels.colorMode === 'slice' ? item.color : '#3c4043'
+          fill: getLabelColor(item, true)
         });
         label.dataset.index = index;
       }
@@ -861,8 +861,8 @@
     const labelLayer = createSvgElement('g', { class: animateNext && state.display.animate ? 'labels fade-in' : 'labels' });
     svg.append(slices, labelLayer);
     const geometry = state.chartType === 'radial'
-      ? drawRadial(svg, slices, labelLayer, width, height)
-      : drawPie(svg, slices, labelLayer, width, height);
+      ? drawRadial(slices, labelLayer, width, height)
+      : drawPie(slices, labelLayer, width, height);
     if (animateNext && state.display.animate) addReveal(svg, slices, geometry);
     animateNext = false;
 

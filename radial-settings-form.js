@@ -380,5 +380,5 @@ window.RadialSettingsForm = (function () {
     renderForm();
   }
 
-  return { build, colorFor, PALETTES };
+  return { build, colorFor };
 })();

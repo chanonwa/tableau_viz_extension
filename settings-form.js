@@ -1,7 +1,9 @@
 'use strict';
 
 // Builds the settings form used by both the Tableau "Format Extension" dialog and the in-chart panel.
-// payload: { state, defaultState, measures: [{ name, mode, lineStyle, color, defaultMode, defaultColor }] }
+// payload: { state, defaultState, measures: [{ name, mode, lineStyle, color, defaultMode, defaultColor }],
+//   color: { fieldName, members: [{ name, color, fill, defaultColor }] } | null,
+//   style: { field, receivedFields, visibilityCandidates, candidates: [{ name, values: [{ name, fill, defaultFill }] }] } }
 window.ComboSettingsForm = (function () {
   const LINE_STYLE_LABELS = { solid: 'Solid', dashed: 'Dashed', dotted: 'Dotted', 'dash-dot': 'Dash-dot' };
 
@@ -355,10 +357,8 @@ window.ComboSettingsForm = (function () {
       ]);
 
       // Display
-      const tooltips = element('input', { type: 'checkbox', checked: draft.display.tooltips });
-      tooltips.addEventListener('change', () => { draft.display.tooltips = tooltips.checked; });
       const displaySection = section('Display', [
-        element('label', { class: 'check' }, [tooltips, ' Show tooltips'])
+        checkbox(draft.display.tooltips, 'Show tooltips', checked => { draft.display.tooltips = checked; })
       ]);
 
       // Forecast, following Tableau's Forecast Options dialog

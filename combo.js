@@ -23,7 +23,7 @@
   const DEFAULT_STATE = {
     series: {},
     // animate: bars grow, lines draw in, and labels fade in when the data changes.
-    // syncAnimation: play it together with the radial chart on the same dashboard (chart-sync.js)
+    // syncAnimation: play it together with the other charts on the same dashboard (chart-sync.js)
     display: { tooltips: true, animate: true, syncAnimation: true },
     // An optional title above the legend, for when the worksheet title is turned off, as in the radial chart
     title: { show: false, text: '', color: '#1d5fa8', fontSize: 17 },

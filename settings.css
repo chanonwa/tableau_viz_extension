@@ -157,3 +157,13 @@
   background: #1a73e8;
   color: #fff;
 }
+
+.settings-form .text-area {
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid #dadce0;
+  border-radius: 3px;
+  font: inherit;
+  font-size: 12px;
+  resize: vertical;
+}

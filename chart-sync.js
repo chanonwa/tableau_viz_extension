@@ -1,6 +1,6 @@
 'use strict';
 
-// Plays the entrance animations of the Combo and Radial charts together. Each extension runs in its own frame, so
+// Plays the entrance animations of the Combo, Radial, and KPI extensions together. Each extension runs in its own frame, so
 // they share an animation clock over a BroadcastChannel (same site only): when one chart starts animating because
 // its data changed, the others replay theirs from the same moment, and a chart whose new data arrives part way
 // through joins in at the same point. Pages use the elapsed time as a negative CSS animation delay (--elapsed).

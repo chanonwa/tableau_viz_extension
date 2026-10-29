@@ -96,7 +96,7 @@
     tooltip: { style: 'extension', showPercent: true },
     // hoverEffect: 'dim' | 'explode' | 'both' | 'none'
     // select: clicking a slice or legend row selects its marks in Tableau, for dashboard actions
-    // syncAnimation: play the animation together with the combo chart on the same dashboard (chart-sync.js)
+    // syncAnimation: play the animation together with the other charts on the same dashboard (chart-sync.js)
     display: { tooltips: true, hoverEffect: 'both', select: true, track: true, animate: true, syncAnimation: true }
   };
   const SETTINGS_KEY = 'radialChartState';

@@ -393,7 +393,7 @@ window.ComboSettingsForm = (function () {
       const animationSection = section('Animation', [
         element('div', { class: 'check-list' }, [
           checkbox(draft.display.animate, 'Animate when the data changes', checked => { draft.display.animate = checked; }),
-          checkbox(draft.display.syncAnimation, 'Animate together with the radial chart', checked => { draft.display.syncAnimation = checked; })
+          checkbox(draft.display.syncAnimation, 'Animate together with the other charts', checked => { draft.display.syncAnimation = checked; })
         ]),
         element('p', {
           class: 'hint',

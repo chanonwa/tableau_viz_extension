@@ -365,7 +365,7 @@ window.RadialSettingsForm = (function () {
         element('div', { class: 'check-list' }, [
           checkbox(display.select, 'Click to select in Tableau', value => { display.select = value; }),
           checkbox(display.animate, 'Animate when the data changes', value => { display.animate = value; }),
-          checkbox(display.syncAnimation, 'Animate together with the combo chart', value => { display.syncAnimation = value; }),
+          checkbox(display.syncAnimation, 'Animate together with the other charts', value => { display.syncAnimation = value; }),
           radial ? checkbox(display.track, 'Background track', value => { display.track = value; }) : ''
         ]),
         hint('Clicking a slice or legend row selects its marks, so dashboard filter and highlight actions work. ' +

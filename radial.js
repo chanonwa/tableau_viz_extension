@@ -648,7 +648,7 @@
   function getCenterDetail (item) {
     const lines = [
       { className: 'center-value', text: formatValue(item.value, '', true), color: state.center.valueColor },
-      { className: 'center-caption', text: `${item.name} · ${formatPercent(item.percent)}`, color: item.color }
+      { className: 'center-caption', text: `${item.name} · ${formatPercent(item.percent)}`, color: state.center.captionColor }
     ];
     if (getTargetField()) {
       lines.push({

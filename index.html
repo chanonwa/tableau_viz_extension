@@ -116,20 +116,19 @@
 
       /* Entrance animation. --elapsed: time already played by the shared animation (chart-sync.js), so a chart
          linked with the radial chart stays in step with it */
-      /* --delay: each bar's place in the left-to-right wave */
       .grow {
-        animation: grow 0.75s cubic-bezier(0.22, 1, 0.36, 1) both;
-        animation-delay: calc(var(--delay, 0ms) - var(--elapsed, 0ms));
+        animation: grow 0.7s ease-out both;
+        animation-delay: calc(-1 * var(--elapsed, 0ms));
       }
 
       .sweep {
-        animation: sweep 1s cubic-bezier(0.45, 0, 0.25, 1) both;
+        animation: sweep 0.9s ease-in-out both;
         animation-delay: calc(-1 * var(--elapsed, 0ms));
       }
 
       .fade-in {
-        animation: fade-in 0.35s ease-out both;
-        animation-delay: calc(0.8s - var(--elapsed, 0ms));
+        animation: fade-in 0.3s ease-out both;
+        animation-delay: calc(0.6s - var(--elapsed, 0ms));
       }
 
       @keyframes grow {

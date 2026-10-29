@@ -963,11 +963,7 @@
     // Bars, then lines, then labels on top. When animating, bars grow from the baseline, lines and points are revealed
     // left to right, and labels fade in at the end (CSS in index.html), on the clock shared with the radial chart.
     const animate = Boolean(animateNext) && state.display.animate;
-    const barLayer = createSvgElement('g');
-    // Bars grow from the baseline in a wave from left to right, keeping pace with the lines
-    const growFrom = slot => animate
-      ? { class: 'grow', style: `transform-origin: 0 ${zeroY}px; --delay: ${Math.round(slot / labels.length * 300)}ms` }
-      : {};
+    const barLayer = createSvgElement('g', animate ? { class: 'grow', style: `transform-origin: 0 ${zeroY}px` } : {});
     const lineLayer = createSvgElement('g');
     const labelLayer = createSvgElement('g', animate ? { class: 'fade-in' } : {});
     plot.append(barLayer, lineLayer, labelLayer);
@@ -1084,8 +1080,7 @@
           y: Math.min(fromY, toY),
           width: Math.max(1, width - 2),
           height: Math.max(1, Math.abs(fromY - toY)),
-          ...getBarPaint(color, fill, sideBySide && !styleField ? 'none' : '#fff'),
-          ...growFrom(categoryIndex)
+          ...getBarPaint(color, fill, sideBySide && !styleField ? 'none' : '#fff')
         }));
 
         if (showBreakdownLabels && shouldLabelSegment.get(segment.key)(categoryIndex)) {
@@ -1126,8 +1121,7 @@
           width: Math.max(1, barWidth - 2),
           height: Math.max(1, Math.abs(zeroY - yValue)),
           rx: 1,
-          ...getBarPaint(getSeries(field).color, fill),
-          ...growFrom(categoryIndex)
+          ...getBarPaint(getSeries(field).color, fill)
         }));
         // Without a Color split, the primary total label replaces the primary mark label
         if (field === primaryMeasure && showTotalLabels) {
@@ -1208,8 +1202,7 @@
               height: Math.max(1, Math.abs(zeroY - yValue)),
               fill: color,
               'fill-opacity': 0.4,
-              rx: 1,
-              ...growFrom(point.slot)
+              rx: 1
             }));
             if (showInterval) {
               const capWidth = Math.min(8, barWidth / 3);

@@ -37,18 +37,6 @@
       <fields max-count="1"/>
       <tooltip>Optional target; attainment is Value divided by Target unless a field is on Attainment</tooltip>
     </encoding>
-    <encoding id="attainment">
-      <display-name>Attainment</display-name>
-      <data-spec>
-        <data-type>numeric</data-type>
-      </data-spec>
-      <role-spec>
-        <role-type>continuous-measure</role-type>
-        <role-type>discrete-measure</role-type>
-      </role-spec>
-      <fields max-count="1"/>
-      <tooltip>Optional attainment rate (1 = 100%) for the status and progress bar</tooltip>
-    </encoding>
     <encoding id="change">
       <display-name>Change</display-name>
       <data-spec>

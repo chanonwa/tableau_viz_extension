@@ -1,7 +1,7 @@
 'use strict';
 
 // Builds the settings form used by both the Tableau "Format Extension" dialog and the in-page panel.
-// payload: { state, defaultState, fields: { value, target, attainment, changes: [name], trend } (encoded field
+// payload: { state, defaultState, fields: { value, target, changes: [name], trend } (encoded field
 //   names, '' when empty), detailFields: [field names on Detail or Tooltip] }
 window.KpiSettingsForm = (function () {
   // Color presets; picking one fills in every color of the card
@@ -205,7 +205,6 @@ window.KpiSettingsForm = (function () {
     const draft = JSON.parse(JSON.stringify(payload.state));
     const fields = payload.fields || { changes: [] };
     const detailFields = payload.detailFields || [];
-    const hasAttainment = Boolean(fields.attainment || fields.target);
 
     function renderForm () {
       container.replaceChildren();
@@ -265,7 +264,7 @@ window.KpiSettingsForm = (function () {
       const aggregationRows = [
         ['value', `Value${fields.value ? ` (${fields.value})` : ''}`, true],
         ['target', `Target${fields.target ? ` (${fields.target})` : ''}`, Boolean(fields.target)],
-        ['attainment', `Attainment${fields.attainment ? ` (${fields.attainment})` : ''}`, Boolean(fields.attainment)],
+        ['attainment', `Attainment${draft.status.attainmentField ? ` (${draft.status.attainmentField})` : ''}`, Boolean(draft.status.attainmentField)],
         ['change', 'Change fields', fields.changes.length > 0],
         ['marker', 'Bar marker', Boolean(draft.progress.markerField)]
       ].map(([key, label, available]) => row(label, disable(select(AGGREGATIONS, aggregation[key], label, value => { aggregation[key] = value; }), !available)));
@@ -287,8 +286,15 @@ window.KpiSettingsForm = (function () {
 
       // Target and status
       const status = draft.status;
+      const hasAttainment = Boolean(fields.target || detailFields.includes(status.attainmentField));
       const statusSection = section('Target and status', [
         checkbox(status.show, 'Show the status (on target, near target, below target)', checked => { status.show = checked; }),
+        row('Attainment', disable(select(
+          [['', fields.target ? `Value ÷ Target (${fields.target})` : 'Value ÷ Target'], ...detailFields.map(name => [name, name])],
+          detailFields.includes(status.attainmentField) ? status.attainmentField : '',
+          'Attainment field',
+          field => { status.attainmentField = field; renderForm(); }
+        ), detailFields.length === 0)),
         row('Compare attainment with', select([
           ['target', '100% of the target'],
           ['marker', 'The bar marker (pace), e.g. the share of the year gone']
@@ -298,8 +304,9 @@ window.KpiSettingsForm = (function () {
           textInput(status.labels[key], `${key} label`, 'label-text', text => { status.labels[key] = text; }),
           colorInput(status.colors[key], `${key} color`, color => { status.colors[key] = color; })
         ])),
-        hint((hasAttainment ? '' : 'Put a measure on Target or Attainment to use this. ') +
-          'Attainment is the Attainment field, or Value ÷ Target. Green and red also color the Change lines.')
+        hint((hasAttainment ? '' : 'Put a measure on Target, or an attainment rate on Detail, to use this. ') +
+          'To use an attainment rate you already calculate (1 = 100%), put it on Detail and choose it above. ' +
+          'Green and red also color the Change lines.')
       ]);
 
       // Progress bar

@@ -132,17 +132,16 @@ A fourth Viz Extension (`kpi.trex`, served at `http://localhost:8765/kpi.html`) 
 1. With `serve.ps1` running, add the extension from `kpi.trex` on the Marks card.
 2. Drag your existing calculations onto the encodings. Only **Value** is needed:
    - **Value**: the KPI, such as `rev_ytd` or `att_ytd`.
-   - **Target**: optional, such as `tgt_ytd`. Attainment is Value ÷ Target.
-   - **Attainment**: optional, an attainment rate you already calculate (1 = 100%), used instead of Value ÷ Target.
+   - **Target**: optional, such as `tgt_ytd`. Attainment is Value ÷ Target, unless you choose an attainment rate under **Target and status**.
    - **Change**: up to two changes, such as `att_ytd_change` (% or points vs prior year). The card picks the arrow and color itself, so separate up and down fields aren't needed.
    - **Trend**: optional dimension, such as `MONTH(Date)`, for a trend line of the Value beside it.
-   - **Detail**: any other field, for the *Visible rows* test, the progress bar marker, or the text (for example `{rev_ytd_py}` in a line of text).
+   - **Detail**: any other field, for the *Visible rows* test, an attainment rate you already calculate (such as `att_ytd`, 1 = 100%), the progress bar marker, or the text (for example `{rev_ytd_py}` in a line of text).
 3. Open **Format Extension** on the Marks card to change:
    - **Title and background**: title text (the Value field's name when empty) and size; an icon; a theme (light, light with gray text, or dark) and each color; left, center, or right alignment, top or middle; border and corner radius.
    - **Visible rows**: uses only rows where a True/False field on **Detail** is True, the same as the radial chart's *Visible rows* and the combo chart's *Visible categories*, so one date range parameter drives every chart. Dashboard filters (for example on Product Group) and parameters apply to the card as to any sheet; set the filter to apply to the KPI worksheets too.
    - **Combine rows**: how each field is combined when the sheet has more than one row (a Trend dimension or a field on Detail): automatic, sum, average, minimum, maximum, first row, or last row. Automatic uses a value that is the same on every row as it is; otherwise Value and Target add up and the other fields take the last row. A sheet of `AGG()` calculations with no dimensions has one row and needs none of this.
    - **Value**: font size, text beside the value (for example `of {target}`), and coloring the value by status.
-   - **Target and status**: show the status; compare the attainment with 100% of the target, or with the bar marker (pace, for example the share of the year gone); where *near target* starts; each status's text and color.
+   - **Target and status**: show the status; the attainment (Value ÷ Target, or a rate on Detail); compare the attainment with 100% of the target, or with the bar marker (pace, for example the share of the year gone); where *near target* starts; each status's text and color.
    - **Progress bar**: show it; what a full bar stands for (100% of the target by default); the percent; a marker from a field on Detail (a fraction, such as 0.75); a caption under the bar (for example `Target {target} · gap {gap}`); status or accent color.
    - **Change lines**: for each Change field, the text after it (for example `vs YoY`), shown as Tableau's format, percent, points (0.012 = 1.2 pts), or number; whether higher is better; a + or − sign.
    - **Trend line**: show it, with or without shading.

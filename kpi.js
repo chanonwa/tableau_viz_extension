@@ -24,10 +24,11 @@
     aggregation: { value: 'auto', target: 'auto', attainment: 'auto', change: 'auto', marker: 'auto' },
     // fontSize px; note: text beside the value (template, see fillTemplate); colorByStatus: the value in the status color
     value: { fontSize: 30, note: '', colorByStatus: false },
-    // Attainment (the Attainment field, or Value ÷ Target) compared with 100%, or with the marker (pace).
-    // near: the lowest attainment, as % of the goal, that counts as near
+    // Attainment (attainmentField, a rate on Detail where 1 = 100%, or else Value ÷ Target) compared with 100%,
+    // or with the marker (pace). near: the lowest attainment, as % of the goal, that counts as near
     status: {
       show: true,
+      attainmentField: '',
       basis: 'target',
       near: 90,
       labels: { on: 'On target', near: 'Near target', below: 'Below target' },
@@ -67,7 +68,7 @@
 
   let worksheet = null;
   let rawRows = [];
-  // Encoded fields: { value, target, attainment, changes: [], trend }
+  // Encoded fields: { value, target, changes: [], trend }
   let fields = { changes: [] };
   // Combined numbers: { value, target, attainment, marker, gap, changes: [], latest, trend: [{ name, value }] },
   // each number as { value, label } or null
@@ -211,7 +212,7 @@
   // Columns that aren't on an encoding, i.e. fields on Detail or Tooltip
   function getUnencodedFields () {
     if (rawRows.length === 0) return [];
-    const used = new Set([fields.value, fields.target, fields.attainment, fields.trend, ...fields.changes]
+    const used = new Set([fields.value, fields.target, fields.trend, ...fields.changes]
       .filter(Boolean).map(field => field.name));
     return Object.keys(rawRows[0]).filter(name => !used.has(name));
   }
@@ -274,8 +275,8 @@
     const aggregation = state.aggregation;
     const value = combine(rows, fields.value.name, aggregation.value, true);
     const target = combine(rows, fields.target?.name, aggregation.target, true);
-    const attainment = fields.attainment
-      ? combine(rows, fields.attainment.name, aggregation.attainment, false)
+    const attainment = hasField(state.status.attainmentField)
+      ? combine(rows, state.status.attainmentField, aggregation.attainment, false)
       : value && target?.value > 0 ? { value: value.value / target.value, label: '' } : null;
     const marker = hasField(state.progress.markerField)
       ? combine(rows, state.progress.markerField, aggregation.marker, false)
@@ -391,7 +392,7 @@
   }
 
   function renderStatus (status) {
-    if (!state.status.show || !status || !fields.target && !fields.attainment) return null;
+    if (!state.status.show || !status) return null;
     const color = state.status.colors[status];
     const element = createElement('span', 'status');
     element.style.color = color;
@@ -490,7 +491,7 @@
   function render () {
     applyColors();
     if (!fields.value) {
-      showMessage('Add a measure to Value. Optionally add Target, Attainment, Change, and a Trend dimension.');
+      showMessage('Add a measure to Value. Optionally add Target, Change, and a Trend dimension.');
       return;
     }
     if (!kpi?.value) {
@@ -559,7 +560,6 @@
       fields: {
         value: fields.value?.name || '',
         target: fields.target?.name || '',
-        attainment: fields.attainment?.name || '',
         changes: fields.changes.map(field => field.name),
         trend: fields.trend?.name || ''
       },
@@ -653,7 +653,6 @@
         fields = {
           value: encodings.value?.[0],
           target: encodings.target?.[0],
-          attainment: encodings.attainment?.[0],
           changes: encodings.change || [],
           trend: encodings.trend?.[0]
         };

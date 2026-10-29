@@ -881,8 +881,9 @@
     animateNext = false;
 
     if (skipped > 0) {
-      const note = addText(svg, 'center-caption', 2, height - 8, `${skipped} zero or negative ${skipped === 1 ? 'value' : 'values'} not shown`, {
-        'font-size': 10
+      const note = addText(svg, 'skipped-note', 2, height - 8, `${skipped} zero or negative ${skipped === 1 ? 'value' : 'values'} not shown`, {
+        'font-size': 10,
+        fill: '#5f6368'
       });
       note.removeAttribute('dominant-baseline');
     }
@@ -987,21 +988,27 @@
   }
 
   function updateFromTableau () {
+    // Data changes can arrive faster than a refresh finishes; only the latest refresh is drawn
+    let latestRefresh = 0;
     const refresh = async () => {
+      const refreshId = ++latestRefresh;
       try {
         rowTuples = new WeakMap();
         const [rows, encodings] = await Promise.all([getSummaryRows(), getEncodings()]);
-        categoryField = encodings.category?.[0];
+        const category = encodings.category?.[0];
+        const order = category
+          ? await ChartColors.getColorOrder(worksheet, category.name, rows.map(row => getLabel(row[category.name])))
+          : [];
+        if (refreshId !== latestRefresh) return;
+        categoryField = category;
         valueField = encodings.value?.[0];
         centerFields = encodings.center || [];
-        colorOrder = categoryField
-          ? await ChartColors.getColorOrder(worksheet, categoryField.name, rows.map(row => getLabel(row[categoryField.name])))
-          : [];
+        colorOrder = order;
         rawRows = rows;
         animateNext = true;
         update();
       } catch (error) {
-        showMessage(`Unable to load Tableau data: ${error.message || error}`);
+        if (refreshId === latestRefresh) showMessage(`Unable to load Tableau data: ${error.message || error}`);
       }
     };
 

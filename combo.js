@@ -426,13 +426,29 @@
     tooltipElement.style.top = `${Math.max(0, top)}px`;
   }
 
+  // label: the name shown in the legend, tooltips, and axis title ('' = the field name).
+  // legend: show the measure in the legend (null = automatic)
   function getDefaultSeries (index) {
-    return { mode: index === 0 ? 'bar' : 'line', lineStyle: 'solid', color: COLORS[index % COLORS.length] };
+    return { mode: index === 0 ? 'bar' : 'line', lineStyle: 'solid', color: COLORS[index % COLORS.length], label: '', legend: null };
   }
 
   function getSeries (field) {
     const index = Math.max(0, measureFields.findIndex(measure => measure.name === field.name));
     return { ...getDefaultSeries(index), ...state.series[field.name] };
+  }
+
+  function getMeasureName (field) {
+    return getSeries(field).label.trim() || field.name;
+  }
+
+  // A bar measure split by Color is explained by the Color legend, so it is left out of the measure legend by default
+  function getDefaultLegend (field) {
+    const primary = measureFields.find(measure => getSeries(measure).mode === 'bar');
+    return !(field === primary && colorField && colorMembers.length > 0);
+  }
+
+  function showInLegend (field) {
+    return getSeries(field).legend ?? getDefaultLegend(field);
   }
 
   // Settings: the Tableau "Format Extension" dialog (Marks card), or an in-chart panel as a fallback.
@@ -443,7 +459,14 @@
       defaultState: mergeState({}),
       measures: measureFields.map((field, index) => {
         const defaults = getDefaultSeries(index);
-        return { name: field.name, ...getSeries(field), defaultMode: defaults.mode, defaultColor: defaults.color };
+        return {
+          name: field.name,
+          ...getSeries(field),
+          legend: showInLegend(field),
+          defaultMode: defaults.mode,
+          defaultColor: defaults.color,
+          defaultLegend: getDefaultLegend(field)
+        };
       }),
       color: colorField && colorMembers.length > 0
         ? {
@@ -659,7 +682,7 @@
         interval: settings.interval
       });
       if (result.error) {
-        errors.push(`${field.name}: ${result.error}`);
+        errors.push(`${getMeasureName(field)}: ${result.error}`);
         return null;
       }
       // Forecasts for ignored periods sit under actual data, so only the future periods are drawn.
@@ -685,10 +708,12 @@
     const primaryBar = measureFields.find(field => getSeries(field).mode === 'bar');
 
     const addGroup = (titleText, entries) => {
-      const title = document.createElement('span');
-      title.className = 'legend-title';
-      title.textContent = titleText;
-      colorLegendElement.appendChild(title);
+      if (titleText) {
+        const title = document.createElement('span');
+        title.className = 'legend-title';
+        title.textContent = titleText;
+        colorLegendElement.appendChild(title);
+      }
       for (const entry of entries) {
         const item = document.createElement('span');
         item.className = 'legend-item';
@@ -707,7 +732,8 @@
       return;
     }
     if (hasColor) {
-      addGroup(`${colorField.name} (${primaryBar.name})`, colorMembers.map(member => ({
+      // The member names speak for themselves, so the Color group has no title
+      addGroup('', colorMembers.map(member => ({
         name: member,
         color: getMemberColor(member),
         // Bar Style decides the fill when it is in use
@@ -724,16 +750,17 @@
     }
   }
 
-  // Read-only measure legend; mark type and line style are changed in Format Extension.
+  // Read-only measure legend; mark type, line style, display name, and which measures appear are set in Format Extension.
   function renderControls () {
     renderColorLegend();
     seriesListElement.replaceChildren();
 
-    measureFields.forEach(field => {
+    measureFields.filter(showInLegend).forEach(field => {
       const { mode, lineStyle, color } = getSeries(field);
+      const name = getMeasureName(field);
       const item = document.createElement('span');
       item.className = 'legend-item';
-      item.title = `${field.name}: ${mode === 'bar' ? 'Bar' : `${lineStyle} line`}. Change it in Format Extension.`;
+      item.title = `${name}: ${mode === 'bar' ? 'Bar' : `${lineStyle} line`}. Change it in Format Extension.`;
 
       const swatch = createSvgElement('svg', { width: 18, height: 10, 'aria-hidden': 'true' });
       swatch.appendChild(mode === 'bar'
@@ -749,7 +776,7 @@
           'stroke-dasharray': LINE_STYLES[lineStyle] ? LINE_STYLES[lineStyle].split(' ').map(length => length / 2).join(' ') : 'none'
         }));
 
-      item.append(swatch, field.name);
+      item.append(swatch, name);
       seriesListElement.appendChild(item);
     });
   }
@@ -875,7 +902,7 @@
     const tickLabels = scale.ticks.map(formatAxisNumber);
     const labels = [...categories, ...(forecast ? forecast.labels : [])];
     const valueTitle = axis.showTitle
-      ? (axis.title.trim() || measureFields.map(field => field.name).join(', ')).slice(0, 80)
+      ? (axis.title.trim() || measureFields.map(getMeasureName).join(', ')).slice(0, 80)
       : '';
     const categoryTitle = axis.showCategoryTitle ? (axis.categoryTitle.trim() || categoryField.name) : '';
     const angle = axis.labelRotation === 'auto' ? 0 : Number(axis.labelRotation);
@@ -1283,7 +1310,7 @@
           return {
             title: `${forecast.labels[forecastIndex]} (forecast)`,
             rows: forecast.series.flatMap(({ field, points, description }) => [
-              { name: field.name, value: formatTooltipValue(points[forecastIndex].value), color: getSeries(field).color },
+              { name: getMeasureName(field), value: formatTooltipValue(points[forecastIndex].value), color: getSeries(field).color },
               ...(showInterval ? [{
                 name: `${state.forecast.interval}% prediction interval`,
                 value: `${formatTooltipValue(points[forecastIndex].low)} – ${formatTooltipValue(points[forecastIndex].high)}`
@@ -1298,7 +1325,7 @@
           rows: [
             ...measureFields.flatMap(field => [
               {
-                name: field.name,
+                name: getMeasureName(field),
                 value: formatTooltipValue(getNumericValue(row, field), getLabel(row[field.name])),
                 color: field === primaryBar ? null : getSeries(field).color,
                 fill: field === primaryBar || !styleField || getSeries(field).mode !== 'bar' ? 'solid' : getRowFill(row)
@@ -1404,18 +1431,18 @@
   function rebuildRows () {
     const fieldName = state.barStyle.field;
     styleField = fieldName && getStyleCandidates().includes(fieldName) ? { name: fieldName } : undefined;
-    setColorMembers(rawRows);
-    chartRows = applyVisibility(applyPriorPeriod(sortRowsByDate(groupRowsByCategory(rawRows))));
+    // The legend lists only members in visible categories, as the radial chart does
+    setColorMembers(rawRows.filter(isVisible));
+    // Visibility runs after Prior period, so hidden categories still feed it
+    chartRows = applyPriorPeriod(sortRowsByDate(groupRowsByCategory(rawRows))).filter(isVisible);
   }
 
-  // Keeps categories whose visibility field is True. Runs after Prior period, so hidden categories still feed it.
-  function applyVisibility (rows) {
+  // True when no visibility field is chosen, or the row's visibility field is True
+  function isVisible (row) {
     const fieldName = state.visibility.field;
-    if (!fieldName || rows.length === 0 || !(fieldName in rows[0])) return rows;
-    return rows.filter(row => {
-      const value = getValue(row[fieldName]);
-      return value === true || String(value).toLowerCase() === 'true' || getLabel(row[fieldName]).toLowerCase() === 'true';
-    });
+    if (!fieldName || !(fieldName in row)) return true;
+    const value = getValue(row[fieldName]);
+    return value === true || String(value).toLowerCase() === 'true' || getLabel(row[fieldName]).toLowerCase() === 'true';
   }
 
   // Sets the prior-period measure on each category to the basis measure's total N periods earlier.
@@ -1458,24 +1485,30 @@
   }
 
   function updateFromTableau (worksheet) {
+    // Data changes can arrive faster than a refresh finishes; only the latest refresh is drawn
+    let latestRefresh = 0;
     const refresh = async () => {
+      const refreshId = ++latestRefresh;
       try {
         const [rows, encodings] = await Promise.all([
           getSummaryRows(worksheet),
           getEncodings(worksheet)
         ]);
+        const color = encodings.colorgroup?.[0];
+        const order = color
+          ? await ChartColors.getColorOrder(worksheet, color.name, rows.map(row => getLabel(row[color.name])))
+          : [];
+        if (refreshId !== latestRefresh) return;
         categoryField = encodings.category?.[0];
         measureFields = encodings.measures || [];
         labelField = encodings.label?.[0];
-        colorField = encodings.colorgroup?.[0];
-        colorOrder = colorField
-          ? await ChartColors.getColorOrder(worksheet, colorField.name, rows.map(row => getLabel(row[colorField.name])))
-          : [];
+        colorField = color;
+        colorOrder = order;
         rawRows = rows;
         rebuildRows();
         render();
       } catch (error) {
-        showMessage(`Unable to load Tableau data: ${error.message || error}`);
+        if (refreshId === latestRefresh) showMessage(`Unable to load Tableau data: ${error.message || error}`);
       }
     };
 

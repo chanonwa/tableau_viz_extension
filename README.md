@@ -10,7 +10,7 @@ This folder contains three extensions. Each has two manifests: one for a local s
 | Anomaly Detection | `anomaly.trex` | `anomaly.server.trex` | <https://chanonwa.github.io/tableau_viz_extension/anomaly.html> |
 | Radial Chart | `radial.trex` | `radial.server.trex` | <https://chanonwa.github.io/tableau_viz_extension/radial.html> |
 
-To just use the extensions, the hosted manifests are the quickest way in: they need no local server and work on Tableau Server and Tableau Cloud. See [Use the hosted version](#use-the-hosted-version-github-pages). To change the code and try it before pushing, [run the server locally](#run-the-server-locally).
+To just use the extensions, the hosted manifests are the quickest way in: they need no local server and work on Tableau Server and Tableau Cloud. See [Use the hosted version](#use-the-hosted-version-github-pages). To change the code and try it before pushing, [run the server locally](#run-the-server-locally). If you work on this repository with others, read [Collaboration](#collaboration) first: every push to `main` goes live for everyone using the hosted extensions.
 
 ## Run the server locally
 
@@ -46,9 +46,9 @@ The extension uses Tableau's summary data and refreshes when the worksheet data 
 
 Open the settings from the extension's dropdown on the Marks card (**Format Extension**) or by double-clicking an axis. Settings are saved in the workbook.
 
-- **Measures**: mark type (bar or line), line style, and color for each measure.
+- **Measures**: mark type (bar or line), line style, and color for each measure; a display name that replaces the field name (for example *Revenue* for *SUM(Revenue)*) in the legend, tooltips, and axis title; and whether the measure appears in the legend. A bar measure split by Color starts out of the legend, since the Color legend already names its parts.
 - **Prior period**: replace a measure with another measure's category total N periods earlier, worked out by the extension (for example, replace `Prior_Revenue_12m` with `SUM(Revenue)` from 12 periods earlier). Use it when a prior-period table calculation such as `LOOKUP(SUM([Revenue]), -12)` shows wrong totals in the chart. With fields on Color or Detail, Tableau calculates it separately for each part (e.g. each Product Group × Source), and parts with no row 12 periods back, such as new Estimate rows, return nothing. Where the earlier period isn't in the chart, Tableau's own value is kept.
-- **Visible categories**: draw only the categories where a True/False field on **Detail** is True, for example an `In Date Range` calculation driven by a date-range parameter. Use this instead of putting the field on the Filters shelf when Prior period is on: Tableau doesn't send filtered-out months to the extension, so Prior period couldn't look back into them. Months hidden this way still reach the extension and feed Prior period.
+- **Visible categories**: draw only the categories where a True/False field on **Detail** is True, for example an `In Date Range` calculation driven by a date-range parameter. Use this instead of putting the field on the Filters shelf when Prior period is on: Tableau doesn't send filtered-out months to the extension, so Prior period couldn't look back into them. Months hidden this way still reach the extension and feed Prior period. The Color and Bar Style legends list only the values in visible categories.
 - **Value axis** (like Tableau's Edit Axis): title, fixed start and end, include zero, reversed and logarithmic scales, automatic, fixed-interval, or no tick marks, grid lines, and number format (number, currency, or percentage, with decimals and K/M/B units).
 - **Category axis**: title and label orientation (horizontal, 45°, or 90°).
 - **Labels** (like Tableau's Label shelf): three independent options: mark labels (each measure's value on its bar or line point), color breakdown labels (each Color value inside the primary bar), and primary total labels (the primary bar total above the bar); label all marks, only the min and max, or only the most recent; number format that follows the value axis (default), uses Tableau's field format, or is custom; font size, color (automatic, match the mark, or custom), and bold; position on bars (outside end, inside end, or center). The format and font also apply to the Text field, and optionally to tooltips.
@@ -57,7 +57,7 @@ Open the settings from the extension's dropdown on the Marks card (**Format Exte
 
 ## Other features
 
-- **Color**: put a dimension on the **Color** encoding to split the first bar measure into one colored group per value, with a legend above the chart. Choose stacked or side-by-side bars, a palette (shared with the radial chart; as in Tableau, each member keeps its color when a filter hides other members, and the same member gets the same color in both), and each value's color and fill (solid, hatched, or light) under **Color** in the settings. Lines and other bar measures show category totals.
+- **Color**: put a dimension on the **Color** encoding to split the first bar measure into one colored group per value, with a legend of the values above the chart. Choose stacked or side-by-side bars, a palette (shared with the radial chart; as in Tableau, each member keeps its color when a filter hides other members, and the same member gets the same color in both), and each value's color and fill (solid, hatched, or light) under **Color** in the settings. Lines and other bar measures show category totals.
 - **Bar Style**: put a dimension such as Source (Official / Estimate) on Tableau's **Detail** shelf, then choose it under **Format Extension** > **Bar Style** > **Field**. Each value sets the fill of the first bar measure: solid, hatched, or light. Values that read as estimates (Estimate, Forecast, Projected, Preliminary, Provisional) start hatched. It works with or without Color; solid parts stack first, with shaded parts on top, and other bar measures follow it in categories with a single value. Bar Style uses Detail rather than its own slot because Tableau allows at most four custom encodings per viz extension (Category, Measures, Color, and Text).
 
 - **Text**: put any field on the **Text** encoding to show its value above each category.
@@ -154,7 +154,7 @@ If the extension area is blank or shows a warning:
 
 If your organisation only allows extensions from its own servers, host the files elsewhere instead of GitHub Pages:
 
-1. Copy the folder to any HTTPS web server or static hosting service (IIS, nginx, Apache, Azure Static Web Apps, Amazon S3 with CloudFront, and so on), keeping the `vendor` subfolder. `README.md`, `serve.ps1`, and the `.trex` files aren't needed there. The server needs a valid certificate and must serve `.js` files as JavaScript.
+1. Copy the folder to any HTTPS web server or static hosting service (IIS, nginx, Apache, Azure Static Web Apps, Amazon S3 with CloudFront, and so on), keeping the `vendor` subfolder. `README.md`, `CONTRIBUTING.md`, `serve.ps1`, and the `.trex` files aren't needed there. The server needs a valid certificate and must serve `.js` files as JavaScript.
 2. Copy `combo.server.trex`, `anomaly.server.trex`, and `radial.server.trex` and change the `<url>` in each to the new address, for example:
 
    ```xml
@@ -165,6 +165,17 @@ If your organisation only allows extensions from its own servers, host the files
 
    The settings dialogs (`settings.html`, `anomaly-settings.html`, `radial-settings.html`) are found relative to the page, so they need no change.
 3. Add the new address to the site's extension safe list and build the workbook with the new manifests, as in [On Tableau Server or Tableau Cloud](#on-tableau-server-or-tableau-cloud).
+
+## Collaboration
+
+Changes are welcome. The short version:
+
+- `main` is the live site. GitHub Pages publishes it within minutes, so every workbook that uses a hosted manifest picks up a push to `main` the next time it loads. Work on a branch and open a pull request instead of pushing to `main`.
+- Test with `serve.ps1` and the local `.trex` manifests in Tableau Desktop before opening a pull request, and check the page in a browser with the sample data.
+- Settings are saved inside people's workbooks, so new settings need defaults and old saved settings must keep loading.
+- Update this README in the same pull request when a change is visible to users.
+
+[CONTRIBUTING.md](CONTRIBUTING.md) has the full workflow, the file layout, a test checklist, and how the repository owner adds collaborators.
 
 ## Requirements
 

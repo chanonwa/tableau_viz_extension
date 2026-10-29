@@ -1,7 +1,7 @@
 'use strict';
 
 // Builds the settings form used by both the Tableau "Format Extension" dialog and the in-chart panel.
-// payload: { state, defaultState, measures: [{ name, mode, lineStyle, color, defaultMode, defaultColor }],
+// payload: { state, defaultState, measures: [{ name, mode, lineStyle, color, label, legend, defaultMode, defaultColor, defaultLegend }],
 //   color: { fieldName, members: [{ name, color, fill, defaultColor, paletteIndex (fixed slot, colors.js) }] } | null,
 //   style: { field, receivedFields, visibilityCandidates, candidates: [{ name, values: [{ name, fill, defaultFill }] }] } }
 window.ComboSettingsForm = (function () {
@@ -71,25 +71,38 @@ window.ComboSettingsForm = (function () {
         const lineStyle = select(Object.entries(LINE_STYLE_LABELS), measure.lineStyle, `${measure.name} line style`);
         lineStyle.disabled = measure.mode !== 'line';
         const color = element('input', { type: 'color', value: measure.color, 'aria-label': `${measure.name} color` });
+        const label = textInput(measure.label, measure.name, `${measure.name} display name`, 'label-text');
+        const legend = element('input', { type: 'checkbox', checked: measure.legend, 'aria-label': `Show ${measure.name} in the legend` });
         mode.addEventListener('change', () => {
           measure.mode = mode.value;
           lineStyle.disabled = measure.mode !== 'line';
         });
         lineStyle.addEventListener('change', () => { measure.lineStyle = lineStyle.value; });
         color.addEventListener('input', () => { measure.color = color.value; });
+        label.addEventListener('input', () => { measure.label = label.value; });
+        legend.addEventListener('change', () => { measure.legend = legend.checked; });
         return element('tr', {}, [
           element('td', { class: 'measure-name', text: measure.name, title: measure.name }),
+          element('td', {}, [label]),
           element('td', {}, [mode]),
           element('td', {}, [lineStyle]),
-          element('td', {}, [color])
+          element('td', {}, [color]),
+          element('td', {}, [legend])
         ]);
       });
       const measuresSection = section('Measures', measures.length === 0
         ? [element('p', { class: 'hint', text: 'Add measures to the Measures encoding to style them.' })]
-        : [element('table', { class: 'measure-table' }, [
-          element('thead', {}, [element('tr', {}, ['Measure', 'Mark', 'Line style', 'Color'].map(text => element('th', { text })))]),
-          element('tbody', {}, measureRows)
-        ])]);
+        : [
+            element('table', { class: 'measure-table' }, [
+              element('thead', {}, [element('tr', {}, ['Measure', 'Display name', 'Mark', 'Line style', 'Color', 'Legend'].map(text => element('th', { text })))]),
+              element('tbody', {}, measureRows)
+            ]),
+            element('p', {
+              class: 'hint',
+              text: 'Display name replaces the field name in the legend, tooltips, and axis title. Legend shows or hides the measure ' +
+                'in the legend; a bar split by Color starts hidden, since the Color legend already names its parts.'
+            })
+          ]);
 
       // Color encoding, following Tableau's Edit Colors dialog
       let colorSection = null;
@@ -118,7 +131,7 @@ window.ComboSettingsForm = (function () {
           element('p', { class: 'hint', text: 'Splits the first bar measure into one colored group per value. Use Hatched or Light to mark values such as estimates.' }),
           element('div', { class: 'row' }, [element('span', { text: 'Bars' }), layout]),
           element('div', { class: 'row' }, [element('span', { text: 'Palette' }), palette]),
-          element('p', { class: 'hint', text: 'Palette colors follow the same order as the radial chart, so a member matches across both.' }),
+          element('p', { class: 'hint', text: 'As in Tableau, each member keeps its palette color when filters change, and matches the radial chart.' }),
           element('table', { class: 'measure-table' }, [
             element('thead', {}, [element('tr', {}, ['Value', 'Color', 'Fill'].map(text => element('th', { text })))]),
             element('tbody', {}, memberRows)
@@ -454,6 +467,8 @@ window.ComboSettingsForm = (function () {
           measure.mode = measure.defaultMode;
           measure.lineStyle = 'solid';
           measure.color = measure.defaultColor;
+          measure.label = '';
+          measure.legend = measure.defaultLegend;
         }
         setMemberDefaults(() => true);
         for (const member of colorMembers) member.fill = 'solid';
@@ -468,7 +483,14 @@ window.ComboSettingsForm = (function () {
       ok.addEventListener('click', () => {
         draft.series = {};
         for (const measure of measures) {
-          draft.series[measure.name] = { mode: measure.mode, lineStyle: measure.lineStyle, color: measure.color };
+          draft.series[measure.name] = {
+            mode: measure.mode,
+            lineStyle: measure.lineStyle,
+            color: measure.color,
+            label: measure.label.trim(),
+            // null keeps the automatic choice, so it follows later changes to the Color encoding
+            legend: measure.legend === measure.defaultLegend ? null : measure.legend
+          };
         }
         // Keep colors chosen for members that are filtered out right now
         draft.colorGroup.fills = draft.colorGroup.fills || {};

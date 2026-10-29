@@ -51,6 +51,10 @@
   width: 90px;
 }
 
+.settings-form .label-text {
+  width: 120px;
+}
+
 .settings-form .symbol-text {
   width: 40px;
 }

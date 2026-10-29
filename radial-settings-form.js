@@ -174,7 +174,7 @@ window.RadialSettingsForm = (function () {
         swatches.length > 0
           ? element('div', { class: 'check-list' }, swatches)
           : hint('Add a field to Category to pick a color for each member.'),
-        hint('Colors follow the same palette order as the combo chart\'s Color legend, so a member matches across both.'),
+        hint('As in Tableau, each member keeps its palette color when filters or sorting change, and matches the combo chart.'),
         element('div', { class: 'settings-buttons' }, [resetColors])
       ]);
 

@@ -22,7 +22,9 @@
   };
   const DEFAULT_STATE = {
     series: {},
-    display: { tooltips: true },
+    // animate: bars grow, lines draw in, and labels fade in when the data changes.
+    // syncAnimation: play it together with the radial chart on the same dashboard (chart-sync.js)
+    display: { tooltips: true, animate: true, syncAnimation: true },
     // Mark labels, like Tableau's Label shelf. numberFormat: 'axis' (follow the value axis),
     // 'tableau' (the field's own format), or 'custom' (format, decimals, units, currencySymbol below).
     labels: {
@@ -98,8 +100,7 @@
 
   const chartElement = document.getElementById('chart');
   const messageElement = document.getElementById('message');
-  const seriesListElement = document.getElementById('series-list');
-  const colorLegendElement = document.getElementById('color-legend');
+  const legendElement = document.getElementById('legend');
   const forecastNoteElement = document.getElementById('forecast-note');
   const tooltipElement = document.getElementById('tooltip');
   const settingsOverlay = document.getElementById('settings-overlay');
@@ -125,12 +126,19 @@
   // Combined row -> Set of Bar Style values in that category
   const rowStyles = new WeakMap();
   let tooltipContent = null;
+  // Why the next render animates: 'data' (new data), 'local' (settings, or another chart started animating),
+  // or null (resize: no animation)
+  let animateNext = 'data';
   let state = mergeState({});
 
   function mergeState (saved) {
     return {
       series: { ...saved.series },
-      display: { tooltips: saved.display?.tooltips ?? DEFAULT_STATE.display.tooltips },
+      display: {
+        tooltips: saved.display?.tooltips ?? DEFAULT_STATE.display.tooltips,
+        animate: saved.display?.animate ?? DEFAULT_STATE.display.animate,
+        syncAnimation: saved.display?.syncAnimation ?? DEFAULT_STATE.display.syncAnimation
+      },
       // Older saved settings kept "show values" under display.valueLabels
       labels: { ...DEFAULT_STATE.labels, show: Boolean(saved.display?.valueLabels), ...saved.labels },
       axis: { ...DEFAULT_STATE.axis, ...saved.axis },
@@ -504,6 +512,7 @@
     saveState();
     // A different Bar Style field changes how rows split, so rebuild them
     rebuildRows();
+    animateNext = 'local';
     render();
   }
 
@@ -699,69 +708,49 @@
     return { labels, series };
   }
 
-  // Legends for the Color and Bar Style encodings
-  function renderColorLegend () {
-    colorLegendElement.replaceChildren();
+  // One read-only legend line: Color members, then Bar Style values, then measures. Values speak for themselves, so
+  // groups have no titles; extra space separates them. Display names, legend visibility, and mark styles are set in
+  // Format Extension.
+  function renderLegend () {
+    legendElement.replaceChildren();
     const hasColor = colorField && colorMembers.length > 0;
     const hasStyle = styleField && styleValues.length > 0;
-    if (!hasColor && !hasStyle) return;
     const primaryBar = measureFields.find(field => getSeries(field).mode === 'bar');
 
-    const addGroup = (titleText, entries) => {
-      if (titleText) {
-        const title = document.createElement('span');
-        title.className = 'legend-title';
-        title.textContent = titleText;
-        colorLegendElement.appendChild(title);
-      }
-      for (const entry of entries) {
-        const item = document.createElement('span');
-        item.className = 'legend-item';
-        const swatch = document.createElement('span');
-        swatch.className = 'legend-swatch';
-        styleFillSwatch(swatch, entry.color, entry.fill);
-        item.append(swatch, entry.name);
-        colorLegendElement.appendChild(item);
-      }
+    const addGroup = items => {
+      items.forEach((item, index) => {
+        if (index === 0 && legendElement.childElementCount > 0) item.classList.add('group-start');
+        legendElement.appendChild(item);
+      });
     };
-
-    if (!primaryBar) {
-      const note = document.createElement('span');
-      note.textContent = 'Color and Bar Style apply to bars; set a measure to Bar to use them.';
-      colorLegendElement.appendChild(note);
-      return;
-    }
-    if (hasColor) {
-      // The member names speak for themselves, so the Color group has no title
-      addGroup('', colorMembers.map(member => ({
-        name: member,
-        color: getMemberColor(member),
-        // Bar Style decides the fill when it is in use
-        fill: hasStyle ? 'solid' : getMemberFill(member)
-      })));
-    }
-    if (hasStyle) {
-      // Gray swatches show the fill only, since colors come from Color or the measure
-      addGroup(styleField.name, styleValues.map(style => ({
-        name: style,
-        color: hasColor ? '#6b6f76' : getSeries(primaryBar).color,
-        fill: getStyleFill(style)
-      })));
-    }
-  }
-
-  // Read-only measure legend; mark type, line style, display name, and which measures appear are set in Format Extension.
-  function renderControls () {
-    renderColorLegend();
-    seriesListElement.replaceChildren();
-
-    measureFields.filter(showInLegend).forEach(field => {
-      const { mode, lineStyle, color } = getSeries(field);
-      const name = getMeasureName(field);
+    const createItem = (swatch, name, title) => {
       const item = document.createElement('span');
       item.className = 'legend-item';
-      item.title = `${name}: ${mode === 'bar' ? 'Bar' : `${lineStyle} line`}. Change it in Format Extension.`;
+      if (title) item.title = title;
+      item.append(swatch, name);
+      return item;
+    };
+    const createFillItem = (name, color, fill) => {
+      const swatch = document.createElement('span');
+      swatch.className = 'legend-swatch';
+      styleFillSwatch(swatch, color, fill);
+      return createItem(swatch, name);
+    };
 
+    if ((hasColor || hasStyle) && !primaryBar) {
+      const note = document.createElement('span');
+      note.textContent = 'Color and Bar Style apply to bars; set a measure to Bar to use them.';
+      addGroup([note]);
+    } else {
+      // Bar Style decides the fill when it is in use
+      if (hasColor) addGroup(colorMembers.map(member => createFillItem(member, getMemberColor(member), hasStyle ? 'solid' : getMemberFill(member))));
+      // Gray swatches show the fill only, since colors come from Color or the measure
+      if (hasStyle) addGroup(styleValues.map(style => createFillItem(style, hasColor ? '#6b6f76' : getSeries(primaryBar).color, getStyleFill(style))));
+    }
+
+    addGroup(measureFields.filter(showInLegend).map(field => {
+      const { mode, lineStyle, color } = getSeries(field);
+      const name = getMeasureName(field);
       const swatch = createSvgElement('svg', { width: 18, height: 10, 'aria-hidden': 'true' });
       swatch.appendChild(mode === 'bar'
         ? createSvgElement('rect', { x: 4, y: 0, width: 10, height: 10, rx: 2, fill: color })
@@ -775,14 +764,12 @@
           'stroke-linecap': 'round',
           'stroke-dasharray': LINE_STYLES[lineStyle] ? LINE_STYLES[lineStyle].split(' ').map(length => length / 2).join(' ') : 'none'
         }));
-
-      item.append(swatch, name);
-      seriesListElement.appendChild(item);
-    });
+      return createItem(swatch, name, `${name}: ${mode === 'bar' ? 'Bar' : `${lineStyle} line`}. Change it in Format Extension.`);
+    }));
   }
 
   function render () {
-    renderControls();
+    renderLegend();
     forecastNoteElement.textContent = '';
 
     if (!categoryField) {
@@ -973,6 +960,31 @@
     });
     const plot = createSvgElement('g', { 'clip-path': `url(#${clipId})` });
 
+    // Bars, then lines, then labels on top. When animating, bars grow from the baseline, lines and points are revealed
+    // left to right, and labels fade in at the end (CSS in index.html), on the clock shared with the radial chart.
+    const animate = Boolean(animateNext) && state.display.animate;
+    const barLayer = createSvgElement('g', animate ? { class: 'grow', style: `transform-origin: 0 ${zeroY}px` } : {});
+    const lineLayer = createSvgElement('g');
+    const labelLayer = createSvgElement('g', animate ? { class: 'fade-in' } : {});
+    plot.append(barLayer, lineLayer, labelLayer);
+    if (animate) {
+      const sweep = createSvgElement('clipPath', { id: 'sweep-clip' });
+      sweep.appendChild(createSvgElement('rect', {
+        class: 'sweep',
+        x: margin.left - 8,
+        y: 0,
+        width: plotWidth + 16,
+        height,
+        style: `transform-origin: ${margin.left - 8}px 0`
+      }));
+      defs.appendChild(sweep);
+      lineLayer.setAttribute('clip-path', 'url(#sweep-clip)');
+      // Only new data asks the other charts to play along
+      const elapsed = state.display.syncAnimation ? ChartSync.begin(animateNext === 'data') : 0;
+      svg.style.setProperty('--elapsed', `${elapsed}ms`);
+    }
+    animateNext = null;
+
     if (forecast) {
       const forecastX = margin.left + groupWidth * categories.length;
       svg.appendChild(createSvgElement('rect', {
@@ -1035,7 +1047,7 @@
     const drawTotalLabel = (row, categoryIndex, barIndex, endY) => {
       const upward = endY <= zeroY;
       addLabel(
-        plot,
+        labelLayer,
         formatLabel(getNumericValue(row, primaryMeasure), getLabel(row[primaryMeasure.name])),
         barX(categoryIndex, barIndex) + barSpan(barIndex) / 2,
         upward ? endY - 4 : endY + labelFontSize + 2,
@@ -1063,7 +1075,7 @@
         const width = sideBySide ? barWidth : barSpan(barIndex);
         const color = getSegmentColor(segment, primaryBar);
         const fill = getSegmentFill(segment);
-        plot.appendChild(createSvgElement('rect', {
+        barLayer.appendChild(createSvgElement('rect', {
           x: left + 1,
           y: Math.min(fromY, toY),
           width: Math.max(1, width - 2),
@@ -1076,10 +1088,10 @@
           // Shaded fills are mostly light, so labels on them use dark text
           const insideColor = fill === 'solid' ? color : '#ffffff';
           if (sideBySide && !styleField) {
-            addLabel(plot, text, left + width / 2, barLabelY(fromY, toY), labelInsideBar ? insideColor : color, { inside: labelInsideBar });
+            addLabel(labelLayer, text, left + width / 2, barLabelY(fromY, toY), labelInsideBar ? insideColor : color, { inside: labelInsideBar });
           } else if (Math.abs(fromY - toY) >= labelFontSize + 2) {
             // Stacked segments are labelled in their middle; segments too thin for the text are skipped
-            addLabel(plot, text, left + width / 2, (fromY + toY) / 2 + labelFontSize / 3, insideColor, { inside: true });
+            addLabel(labelLayer, text, left + width / 2, (fromY + toY) / 2 + labelFontSize / 3, insideColor, { inside: true });
           }
         }
       });
@@ -1103,7 +1115,7 @@
         const yValue = y(value);
         // Other bar measures take the category's Bar Style when the whole category has one value
         const fill = styleField ? getRowFill(row) : 'solid';
-        plot.appendChild(createSvgElement('rect', {
+        barLayer.appendChild(createSvgElement('rect', {
           x: barX(categoryIndex, barIndex) + 1,
           y: Math.min(zeroY, yValue),
           width: Math.max(1, barWidth - 2),
@@ -1116,7 +1128,7 @@
           if (shouldLabel.get(field.name)(categoryIndex)) drawTotalLabel(row, categoryIndex, barIndex, yValue);
         } else if (showValueLabels && shouldLabel.get(field.name)(categoryIndex)) {
           addLabel(
-            plot,
+            labelLayer,
             formatLabel(value, getLabel(row[field.name])),
             barX(categoryIndex, barIndex) + barWidth / 2,
             barLabelY(zeroY, yValue),
@@ -1151,10 +1163,10 @@
       });
       const dashArray = LINE_STYLES[lineStyle];
       if (dashArray) path.setAttribute('stroke-dasharray', dashArray);
-      plot.appendChild(path);
+      lineLayer.appendChild(path);
 
       points.forEach(point => {
-        plot.appendChild(createSvgElement('circle', {
+        lineLayer.appendChild(createSvgElement('circle', {
           cx: point.x,
           cy: point.y,
           r: 3.5,
@@ -1163,7 +1175,7 @@
           'stroke-width': 1.5
         }));
         if (showValueLabels && shouldLabel.get(field.name)(point.categoryIndex)) {
-          addLabel(plot, formatLabel(point.value, getLabel(chartRows[point.categoryIndex][field.name])), point.x, point.y - 8, color);
+          addLabel(labelLayer, formatLabel(point.value, getLabel(chartRows[point.categoryIndex][field.name])), point.x, point.y - 8, color);
         }
       });
     });
@@ -1183,7 +1195,7 @@
             const left = barX(point.slot, barIndex);
             const center = left + span / 2;
             const yValue = y(point.value);
-            plot.appendChild(createSvgElement('rect', {
+            barLayer.appendChild(createSvgElement('rect', {
               x: left + 1,
               y: Math.min(zeroY, yValue),
               width: Math.max(1, span - 2),
@@ -1194,7 +1206,7 @@
             }));
             if (showInterval) {
               const capWidth = Math.min(8, barWidth / 3);
-              plot.appendChild(createSvgElement('path', {
+              lineLayer.appendChild(createSvgElement('path', {
                 d: `M ${center} ${y(point.high)} L ${center} ${y(point.low)} ` +
                   `M ${center - capWidth} ${y(point.high)} L ${center + capWidth} ${y(point.high)} ` +
                   `M ${center - capWidth} ${y(point.low)} L ${center + capWidth} ${y(point.low)}`,
@@ -1204,7 +1216,7 @@
               }));
             }
             if (labelForecast) {
-              addLabel(plot, formatLabel(point.value), center, showInterval ? Math.min(y(point.high), y(point.low)) - 4 : barLabelY(zeroY, yValue), color);
+              addLabel(labelLayer, formatLabel(point.value), center, showInterval ? Math.min(y(point.high), y(point.low)) - 4 : barLabelY(zeroY, yValue), color);
             }
           });
           return;
@@ -1218,14 +1230,14 @@
           const upper = slots.map(point => `L ${xCenter(point.slot)} ${y(point.high)}`);
           const lower = slots.slice().reverse().map(point => `L ${xCenter(point.slot)} ${y(point.low)}`);
           const first = anchor || { x: xCenter(slots[0].slot), y: y(slots[0].value) };
-          plot.appendChild(createSvgElement('path', {
+          lineLayer.appendChild(createSvgElement('path', {
             d: `M ${first.x} ${first.y} ${upper.join(' ')} ${lower.join(' ')} Z`,
             fill: color,
             'fill-opacity': 0.15,
             stroke: 'none'
           }));
         }
-        plot.appendChild(createSvgElement('path', {
+        lineLayer.appendChild(createSvgElement('path', {
           d: start + route,
           fill: 'none',
           stroke: color,
@@ -1236,7 +1248,7 @@
           'aria-label': `${field.name} forecast`
         }));
         slots.forEach(point => {
-          plot.appendChild(createSvgElement('circle', {
+          lineLayer.appendChild(createSvgElement('circle', {
             cx: xCenter(point.slot),
             cy: y(point.value),
             r: 3.5,
@@ -1245,7 +1257,7 @@
             'stroke-width': 2
           }));
           if (labelForecast) {
-            addLabel(plot, formatLabel(point.value), xCenter(point.slot), y(point.value) - 8, color);
+            addLabel(labelLayer, formatLabel(point.value), xCenter(point.slot), y(point.value) - 8, color);
           }
         });
       });
@@ -1258,7 +1270,7 @@
         // A numeric Text field follows the label number format too
         const textValue = getValue(row[labelField.name]);
         const text = typeof textValue === 'number' ? formatLabel(textValue, getLabel(row[labelField.name])) : getLabel(row[labelField.name]);
-        addLabel(plot, text, xCenter(categoryIndex), Math.max(12, top - (showValueLabels || showTotalLabels ? labelFontSize + 8 : 6)), null, { className: 'text-label' });
+        addLabel(labelLayer, text, xCenter(categoryIndex), Math.max(12, top - (showValueLabels || showTotalLabels ? labelFontSize + 8 : 6)), null, { className: 'text-label' });
       });
     }
 
@@ -1506,6 +1518,7 @@
         colorOrder = order;
         rawRows = rows;
         rebuildRows();
+        animateNext = 'data';
         render();
       } catch (error) {
         if (refreshId === latestRefresh) showMessage(`Unable to load Tableau data: ${error.message || error}`);
@@ -1549,6 +1562,13 @@
     state.forecast.show = true;
     render();
   }
+
+  // Another chart started animating; play along
+  ChartSync.onPartnerStart(() => {
+    if (!state.display.animate || !state.display.syncAnimation || chartRows.length === 0) return;
+    animateNext = 'local';
+    render();
+  });
 
   // Redraw at most once per frame while the sheet is resized
   let resizeFrame = 0;

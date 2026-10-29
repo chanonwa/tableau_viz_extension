@@ -39,8 +39,7 @@
         display: none;
       }
 
-      #series-list,
-      #color-legend {
+      #legend {
         display: flex;
         flex-wrap: wrap;
         align-items: center;
@@ -50,17 +49,13 @@
         font-size: 12px;
       }
 
-      #series-list:empty,
-      #color-legend:empty {
+      #legend:empty {
         display: none;
       }
 
-      .legend-title {
-        font-weight: 600;
-      }
-
-      .legend-title:not(:first-child) {
-        margin-left: 12px;
+      /* Extra space before the Bar Style values and before the measures */
+      #legend .group-start {
+        margin-left: 14px;
       }
 
       .legend-item {
@@ -117,6 +112,49 @@
       .tick-label {
         fill: #5f6368;
         font-size: 11px;
+      }
+
+      /* Entrance animation. --elapsed: time already played by the shared animation (chart-sync.js), so a chart
+         linked with the radial chart stays in step with it */
+      .grow {
+        animation: grow 0.7s ease-out both;
+        animation-delay: calc(-1 * var(--elapsed, 0ms));
+      }
+
+      .sweep {
+        animation: sweep 0.9s ease-in-out both;
+        animation-delay: calc(-1 * var(--elapsed, 0ms));
+      }
+
+      .fade-in {
+        animation: fade-in 0.3s ease-out both;
+        animation-delay: calc(0.6s - var(--elapsed, 0ms));
+      }
+
+      @keyframes grow {
+        from {
+          transform: scaleY(0);
+        }
+      }
+
+      @keyframes sweep {
+        from {
+          transform: scaleX(0);
+        }
+      }
+
+      @keyframes fade-in {
+        from {
+          opacity: 0;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .grow,
+        .sweep,
+        .fade-in {
+          animation: none;
+        }
       }
 
       .grid-line {
@@ -215,14 +253,14 @@
     </style>
     <script defer src="./vendor/tableau.extensions.1.latest.min.js"></script>
     <script defer src="./colors.js"></script>
+    <script defer src="./chart-sync.js"></script>
     <script defer src="./forecast.js"></script>
     <script defer src="./settings-form.js"></script>
     <script defer src="./combo.js"></script>
   </head>
   <body>
     <header>
-      <div id="series-list" aria-label="Measure legend"></div>
-      <div id="color-legend" aria-label="Color legend"></div>
+      <div id="legend" aria-label="Legend"></div>
       <div id="forecast-note" role="status"></div>
     </header>
     <main id="chart" aria-label="Combo chart">

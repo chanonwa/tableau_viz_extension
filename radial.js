@@ -77,7 +77,8 @@
     tooltip: { style: 'extension', showPercent: true },
     // hoverEffect: 'dim' | 'explode' | 'both' | 'none'
     // select: clicking a slice or legend row selects its marks in Tableau, for dashboard actions
-    display: { tooltips: true, hoverEffect: 'both', select: true, track: true, animate: true }
+    // syncAnimation: play the animation together with the combo chart on the same dashboard (chart-sync.js)
+    display: { tooltips: true, hoverEffect: 'both', select: true, track: true, animate: true, syncAnimation: true }
   };
   const SETTINGS_KEY = 'radialChartState';
   const UNITS = { thousands: [1e3, 'K'], millions: [1e6, 'M'], billions: [1e9, 'B'] };
@@ -114,8 +115,9 @@
   let hoverIndex = null;
   // Names of the members selected by clicking
   const selected = new Set();
-  // The next render animates the slices in (after new data, not after a hover or resize)
-  let animateNext = true;
+  // Why the next render animates the slices in: 'data' (new data), 'local' (settings, or another chart started
+  // animating), or null (hover, resize: no animation)
+  let animateNext = 'data';
   // Updates the center text for the hovered slice (null clears)
   let setCenterDetail = () => {};
   let lastHoverCall = 0;
@@ -871,14 +873,20 @@
       role: 'img',
       'aria-label': `${valueField.name} by ${categoryField.name}`
     });
+    const animate = Boolean(animateNext) && state.display.animate;
     const slices = createSvgElement('g', { class: 'slices' });
-    const labelLayer = createSvgElement('g', { class: animateNext && state.display.animate ? 'labels fade-in' : 'labels' });
+    const labelLayer = createSvgElement('g', { class: animate ? 'labels fade-in' : 'labels' });
     svg.append(slices, labelLayer);
     const geometry = state.chartType === 'radial'
       ? drawRadial(slices, labelLayer, width, height)
       : drawPie(slices, labelLayer, width, height);
-    if (animateNext && state.display.animate) addReveal(svg, slices, geometry);
-    animateNext = false;
+    if (animate) {
+      addReveal(svg, slices, geometry);
+      // In step with the other charts' shared clock (chart-sync.js); only new data asks them to play along
+      const elapsed = state.display.syncAnimation ? ChartSync.begin(animateNext === 'data') : 0;
+      svg.style.setProperty('--elapsed', `${elapsed}ms`);
+    }
+    animateNext = null;
 
     if (skipped > 0) {
       const note = addText(svg, 'skipped-note', 2, height - 8, `${skipped} zero or negative ${skipped === 1 ? 'value' : 'values'} not shown`, {
@@ -913,7 +921,7 @@
   function applySettings (newState) {
     state = mergeState(newState);
     saveState();
-    animateNext = true;
+    animateNext = 'local';
     update();
   }
 
@@ -1005,7 +1013,7 @@
         centerFields = encodings.center || [];
         colorOrder = order;
         rawRows = rows;
-        animateNext = true;
+        animateNext = 'data';
         update();
       } catch (error) {
         if (refreshId === latestRefresh) showMessage(`Unable to load Tableau data: ${error.message || error}`);
@@ -1039,6 +1047,13 @@
     previewSettingsButton.addEventListener('click', openSettings);
     update();
   }
+
+  // Another chart started animating; play along
+  ChartSync.onPartnerStart(() => {
+    if (!state.display.animate || !state.display.syncAnimation || items.length === 0) return;
+    animateNext = 'local';
+    render();
+  });
 
   let resizeFrame = 0;
   window.addEventListener('resize', () => {

@@ -143,9 +143,11 @@
         font-weight: 600;
       }
 
+      /* --elapsed: time already played by the shared animation (chart-sync.js), so linked charts stay in step */
       .reveal {
         stroke-dashoffset: 100;
         animation: reveal 0.8s ease-out forwards;
+        animation-delay: calc(-1 * var(--elapsed, 0ms));
       }
 
       .reveal.reverse {
@@ -160,7 +162,8 @@
 
       .fade-in {
         opacity: 0;
-        animation: fade-in 0.3s ease-out 0.6s forwards;
+        animation: fade-in 0.3s ease-out forwards;
+        animation-delay: calc(0.6s - var(--elapsed, 0ms));
       }
 
       @keyframes fade-in {
@@ -326,6 +329,7 @@
     </style>
     <script defer src="./vendor/tableau.extensions.1.latest.min.js"></script>
     <script defer src="./colors.js"></script>
+    <script defer src="./chart-sync.js"></script>
     <script defer src="./radial-settings-form.js"></script>
     <script defer src="./radial.js"></script>
   </head>

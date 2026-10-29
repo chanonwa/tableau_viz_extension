@@ -386,7 +386,16 @@ window.ComboSettingsForm = (function () {
 
       // Display
       const displaySection = section('Display', [
-        checkbox(draft.display.tooltips, 'Show tooltips', checked => { draft.display.tooltips = checked; })
+        element('div', { class: 'check-list' }, [
+          checkbox(draft.display.tooltips, 'Show tooltips', checked => { draft.display.tooltips = checked; }),
+          checkbox(draft.display.animate, 'Animate when the data changes', checked => { draft.display.animate = checked; }),
+          checkbox(draft.display.syncAnimation, 'Animate together with the radial chart', checked => { draft.display.syncAnimation = checked; })
+        ]),
+        element('p', {
+          class: 'hint',
+          text: 'Bars grow, lines draw in from the left, and labels fade in. Linked charts on the same dashboard animate in step ' +
+            'whenever either one gets new data, for example from a shared date range parameter.'
+        })
       ]);
 
       // Forecast, following Tableau's Forecast Options dialog

@@ -675,7 +675,7 @@
     const valueSize = center.valueSize > 0
       ? center.valueSize
       : Math.min(...valueTexts.map(text => fitFont(text, room, inner * 0.36)));
-    const largestCaption = Math.max(10, valueSize * 0.42);
+    const largestCaption = Math.max(11, valueSize * 0.5);
 
     let comparisonText = '';
     let comparisonColor = center.upColor;
@@ -692,7 +692,8 @@
     if (comparisonText) lines.push({ className: 'center-comparison', text: comparisonText, color: comparisonColor });
     if (lines.length === 0) return;
     const captionTexts = [...lines, ...details.flat()].filter(line => line.className !== 'center-value').map(line => line.text);
-    const captionSize = Math.min(...captionTexts.map(text => fitFont(text, room, largestCaption)));
+    // Captions sit near the middle of the hole, where it is widest, so they may use a little more of it
+    const captionSize = Math.min(...captionTexts.map(text => fitFont(text, inner * 1.8, largestCaption)));
     const sizeOf = line => line.className === 'center-value' ? valueSize : captionSize;
 
     const group = createSvgElement('g', { class: 'center' });

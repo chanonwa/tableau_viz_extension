@@ -2,7 +2,7 @@
 
 // Builds the settings form used by both the Tableau "Format Extension" dialog and the in-chart panel.
 // payload: { state, defaultState, measures: [{ name, mode, lineStyle, color, defaultMode, defaultColor }],
-//   color: { fieldName, members: [{ name, color, fill, defaultColor }] in palette order (colors.js) } | null,
+//   color: { fieldName, members: [{ name, color, fill, defaultColor, paletteIndex (fixed slot, colors.js) }] } | null,
 //   style: { field, receivedFields, visibilityCandidates, candidates: [{ name, values: [{ name, fill, defaultFill }] }] } }
 window.ComboSettingsForm = (function () {
   const LINE_STYLE_LABELS = { solid: 'Solid', dashed: 'Dashed', dotted: 'Dotted', 'dash-dot': 'Dash-dot' };
@@ -54,10 +54,10 @@ window.ComboSettingsForm = (function () {
       ? payload.style.candidates.map(candidate => ({ name: candidate.name, values: candidate.values.map(value => ({ ...value })) }))
       : [];
     const getStyleValues = () => styleCandidates.find(candidate => candidate.name === draft.barStyle.field)?.values || [];
-    // Members arrive in palette order (alphabetical), so a member's index is its palette position
-    const setMemberDefaults = shouldReset => colorMembers.forEach((member, index) => {
+    // Each member's default is the palette color for its fixed slot (colors.js)
+    const setMemberDefaults = shouldReset => colorMembers.forEach(member => {
       const reset = shouldReset(member);
-      member.defaultColor = ChartColors.paletteColor(draft.colorGroup.palette, index);
+      member.defaultColor = ChartColors.paletteColor(draft.colorGroup.palette, member.paletteIndex);
       if (reset) member.color = member.defaultColor;
     });
 

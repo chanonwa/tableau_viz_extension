@@ -102,6 +102,8 @@
   let categoryField;
   let valueField;
   let centerFields = [];
+  // Category members in palette slot order, fixed across filters (colors.js)
+  let colorOrder = [];
   // Slices in display order: { name, value, label, percent, color, isOther, tupleIds, extras: [[name, text]] }
   let items = [];
   let total = 0;
@@ -341,9 +343,8 @@
       name: compareNames,
       data: (a, b) => a.order - b.order
     };
-    // Colors follow every member in the data, alphabetically, as in the combo chart, so sorting, Visible rows
-    // and Top N don't recolor a member and the same member matches in both extensions
-    const colorOrder = ChartColors.sortMembers(rawRows.map(row => getLabel(row[categoryField.name])));
+    // Each member keeps its palette slot, as in the combo chart, so filters, sorting, Visible rows and Top N
+    // don't recolor it and the same member matches in both extensions
     for (const member of members) member.colorIndex = colorOrder.indexOf(member.name);
     members.sort(sorters[state.sort] || sorters['value-desc']);
 
@@ -993,6 +994,9 @@
         categoryField = encodings.category?.[0];
         valueField = encodings.value?.[0];
         centerFields = encodings.center || [];
+        colorOrder = categoryField
+          ? await ChartColors.getColorOrder(worksheet, categoryField.name, rows.map(row => getLabel(row[categoryField.name])))
+          : [];
         rawRows = rows;
         animateNext = true;
         update();
@@ -1021,6 +1025,7 @@
       Revenue: { value: revenue },
       Accounts: { value: accounts, formattedValue: numberFormat.format(accounts) }
     }));
+    colorOrder = ChartColors.sortMembers(rawRows.map(row => getLabel(row.Product)));
     state.title = { ...state.title, show: true, text: 'Revenue Mix (YTD 2026)' };
     state.number = { format: 'currency', decimals: 1, units: 'millions', currencySymbol: '฿ ' };
     previewSettingsButton.hidden = false;

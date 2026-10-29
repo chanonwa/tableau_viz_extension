@@ -113,6 +113,8 @@
   let labelField;
   let colorField;
   let colorMembers = [];
+  // Color members in palette slot order, fixed across filters (colors.js)
+  let colorOrder = [];
   // Field chosen for Bar Style (e.g. Official / Estimate on Detail) and its values
   let styleField;
   let styleValues = [];
@@ -309,9 +311,13 @@
     return rowBreakdowns.get(row)?.[field.name] || new Map();
   }
 
-  // Palette color for the member's place in the alphabetical member list, the same rule as the radial chart
+  // Palette color for the member's fixed slot, the same rule as the radial chart
+  function getPaletteIndex (member) {
+    return colorOrder.indexOf(member);
+  }
+
   function getDefaultMemberColor (member) {
-    return ChartColors.paletteColor(state.colorGroup.palette, colorMembers.indexOf(member));
+    return ChartColors.paletteColor(state.colorGroup.palette, getPaletteIndex(member));
   }
 
   function getMemberColor (member) {
@@ -446,7 +452,8 @@
               name: member,
               color: getMemberColor(member),
               fill: getMemberFill(member),
-              defaultColor: getDefaultMemberColor(member)
+              defaultColor: getDefaultMemberColor(member),
+              paletteIndex: getPaletteIndex(member)
             }))
           }
         : null,
@@ -1461,6 +1468,9 @@
         measureFields = encodings.measures || [];
         labelField = encodings.label?.[0];
         colorField = encodings.colorgroup?.[0];
+        colorOrder = colorField
+          ? await ChartColors.getColorOrder(worksheet, colorField.name, rows.map(row => getLabel(row[colorField.name])))
+          : [];
         rawRows = rows;
         rebuildRows();
         render();
@@ -1501,6 +1511,7 @@
       }));
     }).flat();
     rawRows = rows;
+    colorOrder = getDistinctValues(rows, 'Region');
     rebuildRows();
     state.forecast.show = true;
     render();

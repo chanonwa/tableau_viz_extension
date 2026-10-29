@@ -1,11 +1,11 @@
 'use strict';
 
 // Builds the settings form used by both the Tableau "Format Extension" dialog and the in-page panel.
-// payload: { state, defaultState, members: [{ name, isOther, colorIndex }] in display order (colorIndex: place among
-//   every member, alphabetically, for the shared palette in colors.js), centerFields: [name],
+// payload: { state, defaultState, members: [{ name, isOther, colorIndex }] in display order (colorIndex: the member's
+//   fixed palette slot, colors.js), centerFields: [name],
 //   visibilityCandidates: [field names on Detail or Tooltip] }
 window.RadialSettingsForm = (function () {
-  // A member's color: its own choice, else the shared palette color for its place among all members (colors.js)
+  // A member's color: its own choice, else the shared palette color for its fixed slot (colors.js)
   function colorFor (state, name, index, isOther) {
     if (state.colors[name]) return state.colors[name];
     if (isOther) return ChartColors.OTHER_COLOR;

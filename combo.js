@@ -25,6 +25,9 @@
     // animate: bars grow, lines draw in, and labels fade in when the data changes.
     // syncAnimation: play it together with the radial chart on the same dashboard (chart-sync.js)
     display: { tooltips: true, animate: true, syncAnimation: true },
+    // An optional title above the legend, for when the worksheet title is turned off, as in the radial chart
+    title: { show: false, text: '', color: '#1d5fa8', fontSize: 17 },
+    background: '#ffffff',
     // Mark labels, like Tableau's Label shelf. numberFormat: 'axis' (follow the value axis),
     // 'tableau' (the field's own format), or 'custom' (format, decimals, units, currencySymbol below).
     labels: {
@@ -100,6 +103,7 @@
 
   const chartElement = document.getElementById('chart');
   const messageElement = document.getElementById('message');
+  const titleElement = document.getElementById('title');
   const legendElement = document.getElementById('legend');
   const forecastNoteElement = document.getElementById('forecast-note');
   const tooltipElement = document.getElementById('tooltip');
@@ -139,6 +143,8 @@
         animate: saved.display?.animate ?? DEFAULT_STATE.display.animate,
         syncAnimation: saved.display?.syncAnimation ?? DEFAULT_STATE.display.syncAnimation
       },
+      title: { ...DEFAULT_STATE.title, ...saved.title },
+      background: saved.background || DEFAULT_STATE.background,
       // Older saved settings kept "show values" under display.valueLabels
       labels: { ...DEFAULT_STATE.labels, show: Boolean(saved.display?.valueLabels), ...saved.labels },
       axis: { ...DEFAULT_STATE.axis, ...saved.axis },
@@ -768,7 +774,18 @@
     }));
   }
 
+  function renderTitle () {
+    const title = state.title;
+    document.body.style.background = state.background;
+    titleElement.hidden = !title.show || !title.text.trim();
+    // Left empty when hidden, so an empty header collapses
+    titleElement.textContent = titleElement.hidden ? '' : title.text;
+    titleElement.style.color = title.color;
+    titleElement.style.fontSize = `${title.fontSize}px`;
+  }
+
   function render () {
+    renderTitle();
     renderLegend();
     forecastNoteElement.textContent = '';
 
@@ -1080,7 +1097,7 @@
           y: Math.min(fromY, toY),
           width: Math.max(1, width - 2),
           height: Math.max(1, Math.abs(fromY - toY)),
-          ...getBarPaint(color, fill, sideBySide && !styleField ? 'none' : '#fff')
+          ...getBarPaint(color, fill, sideBySide && !styleField ? 'none' : state.background)
         }));
 
         if (showBreakdownLabels && shouldLabelSegment.get(segment.key)(categoryIndex)) {
@@ -1171,7 +1188,7 @@
           cy: point.y,
           r: 3.5,
           fill: color,
-          stroke: '#fff',
+          stroke: state.background,
           'stroke-width': 1.5
         }));
         if (showValueLabels && shouldLabel.get(field.name)(point.categoryIndex)) {
@@ -1252,7 +1269,7 @@
             cx: xCenter(point.slot),
             cy: y(point.value),
             r: 3.5,
-            fill: '#fff',
+            fill: state.background,
             stroke: color,
             'stroke-width': 2
           }));

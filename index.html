@@ -39,6 +39,13 @@
         display: none;
       }
 
+      /* Optional title from Format Extension; its color and size are set there */
+      #title {
+        margin: 0 0 8px;
+        font-size: 17px;
+        font-weight: 700;
+      }
+
       #legend {
         display: flex;
         flex-wrap: wrap;
@@ -260,6 +267,7 @@
   </head>
   <body>
     <header>
+      <h1 id="title" hidden></h1>
       <div id="legend" aria-label="Legend"></div>
       <div id="forecast-note" role="status"></div>
     </header>

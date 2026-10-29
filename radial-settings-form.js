@@ -346,7 +346,10 @@ window.RadialSettingsForm = (function () {
       const save = element('button', { type: 'button', class: 'primary', text: 'OK' });
       save.addEventListener('click', () => handlers.onSave(draft));
 
+      // Same order as the combo chart's settings: title, data, marks, colors, labels, chart-specific sections,
+      // tooltip, interaction and animation
       container.append(
+        appearance,
         visibilitySection,
         chart,
         slices,
@@ -358,7 +361,6 @@ window.RadialSettingsForm = (function () {
         numberSection,
         tooltipSection,
         interaction,
-        appearance,
         element('div', { class: 'settings-buttons' }, [reset, element('span', { class: 'spacer' }), cancel, save])
       );
     }

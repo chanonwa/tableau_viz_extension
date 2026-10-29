@@ -380,14 +380,18 @@ window.ComboSettingsForm = (function () {
           element('span', { text: 'Size' }), fontSize,
           element('span', { text: 'Color' }), colorMode, labelColor,
           checkbox(labels.bold, 'Bold', checked => { labels.bold = checked; })
-        ]),
-        checkbox(labels.applyToTooltips, 'Use this number format in tooltips', checked => { labels.applyToTooltips = checked; })
+        ])
       ]);
 
-      // Display
-      const displaySection = section('Display', [
+      // Tooltip
+      const tooltipSection = section('Tooltip', [
+        checkbox(draft.display.tooltips, 'Show tooltips', checked => { draft.display.tooltips = checked; }),
+        checkbox(labels.applyToTooltips, 'Use the label number format in tooltips', checked => { labels.applyToTooltips = checked; })
+      ]);
+
+      // Animation
+      const animationSection = section('Animation', [
         element('div', { class: 'check-list' }, [
-          checkbox(draft.display.tooltips, 'Show tooltips', checked => { draft.display.tooltips = checked; }),
           checkbox(draft.display.animate, 'Animate when the data changes', checked => { draft.display.animate = checked; }),
           checkbox(draft.display.syncAnimation, 'Animate together with the radial chart', checked => { draft.display.syncAnimation = checked; })
         ]),
@@ -396,6 +400,27 @@ window.ComboSettingsForm = (function () {
           text: 'Bars grow, lines draw in from the left, and labels fade in. Linked charts on the same dashboard animate in step ' +
             'whenever either one gets new data, for example from a shared date range parameter.'
         })
+      ]);
+
+      // Title and background, as in the radial chart
+      const title = draft.title;
+      const titleText = textInput(title.text, 'Chart title', 'Title text');
+      titleText.addEventListener('input', () => { title.text = titleText.value; });
+      const titleSize = numberInput(title.fontSize, 10, 36, 'Title font size');
+      titleSize.addEventListener('change', () => { title.fontSize = clamp(titleSize.value, 10, 36, title.fontSize); });
+      const titleColor = element('input', { type: 'color', value: title.color, 'aria-label': 'Title color' });
+      titleColor.addEventListener('input', () => { title.color = titleColor.value; });
+      const background = element('input', { type: 'color', value: draft.background, 'aria-label': 'Background color' });
+      background.addEventListener('input', () => { draft.background = background.value; });
+      const titleSection = section('Title and background', [
+        checkbox(title.show, 'Show title', checked => { title.show = checked; }),
+        element('div', { class: 'row' }, [element('span', { text: 'Text' }), titleText]),
+        element('div', { class: 'row' }, [
+          element('span', { text: 'Font size' }), titleSize,
+          element('span', { text: 'Color' }), titleColor
+        ]),
+        element('div', { class: 'row' }, [element('span', { text: 'Background' }), background]),
+        element('p', { class: 'hint', text: 'Turn off the worksheet title in Tableau if you use this one.' })
       ]);
 
       // Forecast, following Tableau's Forecast Options dialog
@@ -517,17 +542,21 @@ window.ComboSettingsForm = (function () {
         handlers.onSave(draft);
       });
 
+      // Same order as the radial chart's settings: title, data, marks, colors, labels, chart-specific sections,
+      // tooltip, interaction and animation
       container.append(
+        titleSection,
+        visibilitySection,
         measuresSection,
         priorSection,
-        visibilitySection,
         ...(colorSection ? [colorSection] : []),
         styleSection,
+        labelsSection,
         valueAxisSection,
         categoryAxisSection,
-        labelsSection,
-        displaySection,
         forecastSection,
+        tooltipSection,
+        animationSection,
         element('div', { class: 'settings-buttons' }, [reset, element('span', { class: 'spacer' }), cancel, ok])
       );
     }

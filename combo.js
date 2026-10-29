@@ -46,8 +46,8 @@
       applyToTooltips: true
     },
     // Field on the Color encoding splits the primary (first) bar measure
-    // fills: member -> 'solid' | 'hatched' | 'light' (solid when missing)
-    colorGroup: { layout: 'stacked', colors: {}, fills: {} },
+    // fills: member -> 'solid' | 'hatched' | 'light' (solid when missing). palette: shared with the radial chart (colors.js)
+    colorGroup: { layout: 'stacked', palette: ChartColors.DEFAULT_PALETTE, colors: {}, fills: {} },
     // Bar Style reads a field the user put on Detail (Tableau allows only four custom encodings).
     // field: its name ('' = none); fills: value -> 'solid' | 'hatched' | 'light'
     barStyle: { field: '', fills: {} },
@@ -309,9 +309,13 @@
     return rowBreakdowns.get(row)?.[field.name] || new Map();
   }
 
+  // Palette color for the member's place in the alphabetical member list, the same rule as the radial chart
+  function getDefaultMemberColor (member) {
+    return ChartColors.paletteColor(state.colorGroup.palette, colorMembers.indexOf(member));
+  }
+
   function getMemberColor (member) {
-    const index = Math.max(0, colorMembers.indexOf(member));
-    return state.colorGroup.colors[member] || COLORS[(measureFields.length + index) % COLORS.length];
+    return state.colorGroup.colors[member] || getDefaultMemberColor(member);
   }
 
   function getMemberFill (member) {
@@ -438,11 +442,11 @@
       color: colorField && colorMembers.length > 0
         ? {
             fieldName: colorField.name,
-            members: colorMembers.map((member, index) => ({
+            members: colorMembers.map(member => ({
               name: member,
               color: getMemberColor(member),
               fill: getMemberFill(member),
-              defaultColor: COLORS[(measureFields.length + index) % COLORS.length]
+              defaultColor: getDefaultMemberColor(member)
             }))
           }
         : null,
@@ -1379,8 +1383,7 @@
 
   // Members are sorted alphabetically, as in Tableau's default color legend
   function getDistinctValues (rows, fieldName) {
-    return [...new Set(rows.map(row => getLabel(row[fieldName])))]
-      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    return ChartColors.sortMembers(rows.map(row => getLabel(row[fieldName])));
   }
 
   // Columns in the summary data that aren't on an encoding, i.e. fields on Detail or Tooltip

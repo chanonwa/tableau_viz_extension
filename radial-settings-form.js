@@ -1,31 +1,15 @@
 'use strict';
 
 // Builds the settings form used by both the Tableau "Format Extension" dialog and the in-page panel.
-// payload: { state, defaultState, members: [{ name, isOther, colorIndex }] in display order, centerFields: [name],
+// payload: { state, defaultState, members: [{ name, isOther, colorIndex }] in display order (colorIndex: place among
+//   every member, alphabetically, for the shared palette in colors.js), centerFields: [name],
 //   visibilityCandidates: [field names on Detail or Tooltip] }
 window.RadialSettingsForm = (function () {
-  const PALETTES = {
-    ocean: ['#1d5fa8', '#2f8fe8', '#27b5a6', '#f9c15c', '#b9a0e6', '#5cc8f2', '#f27a6b', '#7d8fa3', '#8fd18a', '#e58bc5'],
-    tableau: ['#4e79a7', '#f28e2c', '#e15759', '#76b7b2', '#59a14f', '#edc949', '#af7aa1', '#ff9da7', '#9c755f', '#bab0ab'],
-    blues: ['#0b3c7a', '#1d5fa8', '#2f8fe8', '#5cb1f5', '#93ccf8', '#c4e2fb', '#7d8fa3', '#a9b6c4'],
-    warm: ['#b8432f', '#e3693f', '#f29a52', '#f9c15c', '#f7dc8e', '#c98f6b', '#8c6d5c', '#d9b8a3'],
-    pastel: ['#8ab6e8', '#f7b39b', '#9fd8c8', '#f9d98c', '#c9b5ec', '#f4a8c6', '#b5d99c', '#c7ccd1']
-  };
-  const PALETTE_NAMES = [
-    ['ocean', 'Ocean'],
-    ['tableau', 'Tableau 10'],
-    ['blues', 'Blues'],
-    ['warm', 'Warm'],
-    ['pastel', 'Pastel']
-  ];
-  const OTHER_COLOR = '#bdc1c6';
-
-  // A member's color: its own choice, else the palette color for its size rank
+  // A member's color: its own choice, else the shared palette color for its place among all members (colors.js)
   function colorFor (state, name, index, isOther) {
     if (state.colors[name]) return state.colors[name];
-    if (isOther) return OTHER_COLOR;
-    const palette = PALETTES[state.palette] || PALETTES.ocean;
-    return palette[index % palette.length];
+    if (isOther) return ChartColors.OTHER_COLOR;
+    return ChartColors.paletteColor(state.palette, index);
   }
 
   function element (tag, attributes, children) {
@@ -186,10 +170,11 @@ window.RadialSettingsForm = (function () {
       const resetColors = element('button', { type: 'button', text: 'Use palette colors' });
       resetColors.addEventListener('click', () => { draft.colors = {}; renderForm(); });
       const colors = section('Colors', [
-        row('Palette', select(PALETTE_NAMES, draft.palette, 'Palette', value => { draft.palette = value; renderForm(); })),
+        row('Palette', select(ChartColors.PALETTE_NAMES, draft.palette, 'Palette', value => { draft.palette = value; renderForm(); })),
         swatches.length > 0
           ? element('div', { class: 'check-list' }, swatches)
           : hint('Add a field to Category to pick a color for each member.'),
+        hint('Colors follow the same palette order as the combo chart\'s Color legend, so a member matches across both.'),
         element('div', { class: 'settings-buttons' }, [resetColors])
       ]);
 

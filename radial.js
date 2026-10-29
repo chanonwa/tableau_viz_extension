@@ -30,7 +30,7 @@
     // Uses only rows where this field (e.g. a True/False date-range test on Detail) is True, the same as the
     // combo chart's Visible categories, so one parameter can drive both charts.
     visibility: { field: '' },
-    palette: 'ocean',
+    palette: ChartColors.DEFAULT_PALETTE,
     // member -> color
     colors: {},
     // Slice opacity, %
@@ -341,14 +341,15 @@
       name: compareNames,
       data: (a, b) => a.order - b.order
     };
-    // Colors go by size, largest first, so a member keeps its color whichever sort is chosen
-    const bySize = [...members].sort(sorters['value-desc']);
-    bySize.forEach((member, rank) => { member.colorIndex = rank; });
+    // Colors follow every member in the data, alphabetically, as in the combo chart, so sorting, Visible rows
+    // and Top N don't recolor a member and the same member matches in both extensions
+    const colorOrder = ChartColors.sortMembers(rawRows.map(row => getLabel(row[categoryField.name])));
+    for (const member of members) member.colorIndex = colorOrder.indexOf(member.name);
     members.sort(sorters[state.sort] || sorters['value-desc']);
 
     if (state.topN > 0 && members.length > state.topN + 1) {
       // The largest members stay, whatever the sort; the rest become one slice at the end
-      const largest = new Set(bySize.slice(0, state.topN));
+      const largest = new Set([...members].sort(sorters['value-desc']).slice(0, state.topN));
       const rest = members.filter(member => !largest.has(member));
       members = members.filter(member => largest.has(member));
       members.push({

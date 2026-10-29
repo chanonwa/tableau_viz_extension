@@ -2,7 +2,7 @@
 
 // Builds the settings form used by both the Tableau "Format Extension" dialog and the in-chart panel.
 // payload: { state, defaultState, measures: [{ name, mode, lineStyle, color, defaultMode, defaultColor }],
-//   color: { fieldName, members: [{ name, color, fill, defaultColor }] } | null,
+//   color: { fieldName, members: [{ name, color, fill, defaultColor }] in palette order (colors.js) } | null,
 //   style: { field, receivedFields, visibilityCandidates, candidates: [{ name, values: [{ name, fill, defaultFill }] }] } }
 window.ComboSettingsForm = (function () {
   const LINE_STYLE_LABELS = { solid: 'Solid', dashed: 'Dashed', dotted: 'Dotted', 'dash-dot': 'Dash-dot' };
@@ -54,6 +54,12 @@ window.ComboSettingsForm = (function () {
       ? payload.style.candidates.map(candidate => ({ name: candidate.name, values: candidate.values.map(value => ({ ...value })) }))
       : [];
     const getStyleValues = () => styleCandidates.find(candidate => candidate.name === draft.barStyle.field)?.values || [];
+    // Members arrive in palette order (alphabetical), so a member's index is its palette position
+    const setMemberDefaults = shouldReset => colorMembers.forEach((member, index) => {
+      const reset = shouldReset(member);
+      member.defaultColor = ChartColors.paletteColor(draft.colorGroup.palette, index);
+      if (reset) member.color = member.defaultColor;
+    });
 
     function renderForm () {
       container.replaceChildren();
@@ -90,6 +96,13 @@ window.ComboSettingsForm = (function () {
       if (payload.color) {
         const layout = select([['stacked', 'Stacked'], ['side-by-side', 'Side by side']], draft.colorGroup.layout, 'Bar layout');
         layout.addEventListener('change', () => { draft.colorGroup.layout = layout.value; });
+        const palette = select(ChartColors.PALETTE_NAMES, draft.colorGroup.palette, 'Palette');
+        palette.addEventListener('change', () => {
+          draft.colorGroup.palette = palette.value;
+          // Members still on their palette color move to the new palette; picked colors stay
+          setMemberDefaults(member => member.color === member.defaultColor);
+          renderForm();
+        });
         const memberRows = colorMembers.map(member => {
           const color = element('input', { type: 'color', value: member.color, 'aria-label': `${member.name} color` });
           color.addEventListener('input', () => { member.color = color.value; });
@@ -104,6 +117,8 @@ window.ComboSettingsForm = (function () {
         colorSection = section(`Color: ${payload.color.fieldName}`, [
           element('p', { class: 'hint', text: 'Splits the first bar measure into one colored group per value. Use Hatched or Light to mark values such as estimates.' }),
           element('div', { class: 'row' }, [element('span', { text: 'Bars' }), layout]),
+          element('div', { class: 'row' }, [element('span', { text: 'Palette' }), palette]),
+          element('p', { class: 'hint', text: 'Palette colors follow the same order as the radial chart, so a member matches across both.' }),
           element('table', { class: 'measure-table' }, [
             element('thead', {}, [element('tr', {}, ['Value', 'Color', 'Fill'].map(text => element('th', { text })))]),
             element('tbody', {}, memberRows)
@@ -440,10 +455,8 @@ window.ComboSettingsForm = (function () {
           measure.lineStyle = 'solid';
           measure.color = measure.defaultColor;
         }
-        for (const member of colorMembers) {
-          member.color = member.defaultColor;
-          member.fill = 'solid';
-        }
+        setMemberDefaults(() => true);
+        for (const member of colorMembers) member.fill = 'solid';
         for (const candidate of styleCandidates) {
           for (const value of candidate.values) value.fill = value.defaultFill;
         }

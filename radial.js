@@ -30,6 +30,9 @@
     // Uses only rows where this field (e.g. a True/False date-range test on Detail) is True, the same as the
     // combo chart's Visible categories, so one parameter can drive both charts.
     visibility: { field: '' },
+    // A target measure on Detail; each member's value is compared with it in the legend, tooltip, and center.
+    // colorize: % of target in metColor when the target is met, missedColor when not
+    target: { field: '', colorize: true, metColor: '#1e8e3e', missedColor: '#d93025' },
     palette: ChartColors.DEFAULT_PALETTE,
     // member -> color
     colors: {},
@@ -68,7 +71,23 @@
       distance: 8
     },
     // position: 'bottom' | 'top' | 'right' | 'left' | 'none'
-    legend: { position: 'bottom', showPercent: true, showValue: true, fontSize: 13, header: false, totalRow: false },
+    // headers: each column's name in the header row (text '' = the default name); the row shows when any is on
+    legend: {
+      position: 'bottom',
+      showPercent: true,
+      showValue: true,
+      showTarget: false,
+      showAchievement: true,
+      fontSize: 13,
+      totalRow: false,
+      headers: {
+        category: { show: false, text: '' },
+        share: { show: false, text: '' },
+        value: { show: false, text: '' },
+        target: { show: false, text: '' },
+        achievement: { show: false, text: '' }
+      }
+    },
     // format: 'auto' (Tableau's own format) | 'number' | 'currency' | 'percent'
     // units: 'none' | 'auto' | 'thousands' | 'millions' | 'billions'
     number: { format: 'auto', decimals: 1, units: 'none', currencySymbol: '฿ ' },
@@ -105,9 +124,12 @@
   let centerFields = [];
   // Category members in palette slot order, fixed across filters (colors.js)
   let colorOrder = [];
-  // Slices in display order: { name, value, label, percent, color, isOther, tupleIds, extras: [[name, text]] }
+  // Slices in display order: { name, value, label, percent, target, targetLabel, achievement, color, isOther,
+  // tupleIds, extras: [[name, text]] }; target and achievement are null without a target
   let items = [];
   let total = 0;
+  // Sum of the members' targets, or null without a target field
+  let totalTarget = null;
   let skipped = 0;
   // Center KPI and comparison: { value, label } or null
   let centerKpi = null;
@@ -125,9 +147,16 @@
 
   function mergeState (saved) {
     const merged = { ...DEFAULT_STATE, ...saved, colors: { ...saved.colors } };
-    for (const key of ['visibility', 'title', 'center', 'labels', 'legend', 'number', 'tooltip', 'display']) {
+    for (const key of ['visibility', 'target', 'title', 'center', 'labels', 'legend', 'number', 'tooltip', 'display']) {
       merged[key] = { ...DEFAULT_STATE[key], ...saved[key] };
     }
+    // Earlier versions had one Header row checkbox for every column
+    const { header, headers = {} } = saved.legend || {};
+    merged.legend.headers = {};
+    for (const [key, defaults] of Object.entries(DEFAULT_STATE.legend.headers)) {
+      merged.legend.headers[key] = { ...defaults, show: Boolean(header), ...headers[key] };
+    }
+    delete merged.legend.header;
     return merged;
   }
 
@@ -255,9 +284,25 @@
     return Object.keys(rawRows[0]).filter(name => !used.has(name));
   }
 
-  // Fields listed in the tooltip: the unencoded ones, apart from the visibility field
+  // Fields listed in the tooltip: the unencoded ones, apart from the visibility and target fields
   function getExtraFields () {
-    return getUnencodedFields().filter(name => name !== state.visibility.field);
+    return getUnencodedFields().filter(name => name !== state.visibility.field && name !== state.target.field);
+  }
+
+  // The chosen target field, or '' when none is chosen or it is no longer on the sheet
+  function getTargetField () {
+    const fieldName = state.target.field;
+    return fieldName && rawRows.length > 0 && fieldName in rawRows[0] ? fieldName : '';
+  }
+
+  // Value as a share of the target, or null when there is no positive target
+  function getAchievement (value, target) {
+    return target > 0 ? value / target : null;
+  }
+
+  function getAchievementColor (achievement, fallback) {
+    if (achievement === null || !state.target.colorize) return fallback;
+    return achievement >= 1 ? state.target.metColor : state.target.missedColor;
   }
 
   function isTrue (dataValue) {
@@ -304,6 +349,7 @@
   function buildItems () {
     items = [];
     total = 0;
+    totalTarget = null;
     skipped = 0;
     const visibleRows = getVisibleRows();
     centerKpi = getCenterValue(centerFields[0], visibleRows);
@@ -311,6 +357,7 @@
     if (!categoryField || !valueField) return;
 
     const extraFields = getExtraFields();
+    const targetField = getTargetField();
     const groups = new Map();
     for (const row of visibleRows) {
       const name = getLabel(row[categoryField.name]);
@@ -328,10 +375,13 @@
         skipped++;
         continue;
       }
+      const targets = targetField ? rows.map(row => getNumber(row[targetField])).filter(number => number !== null) : [];
       members.push({
         name,
         value,
         label: rows.length === 1 ? getLabel(rows[0][valueField.name]) : '',
+        target: targets.length > 0 ? targets.reduce((sum, number) => sum + number, 0) : null,
+        targetLabel: rows.length === 1 && targets.length === 1 ? getLabel(rows[0][targetField]) : '',
         extras: extraFields.map(field => [field, combineExtra(rows.map(row => row[field]))]),
         tupleIds: rows.map(row => rowTuples.get(row)).filter(Boolean),
         key: getValue(rows[0][categoryField.name]),
@@ -355,10 +405,13 @@
       const largest = new Set([...members].sort(sorters['value-desc']).slice(0, state.topN));
       const rest = members.filter(member => !largest.has(member));
       members = members.filter(member => largest.has(member));
+      const restTargets = rest.filter(member => member.target !== null);
       members.push({
         name: state.otherLabel || 'Other',
         value: rest.reduce((sum, member) => sum + member.value, 0),
         label: '',
+        target: restTargets.length > 0 ? restTargets.reduce((sum, member) => sum + member.target, 0) : null,
+        targetLabel: '',
         extras: [['Includes', rest.length <= 5 ? rest.map(member => member.name).join(', ') : `${rest.length} members`]],
         tupleIds: rest.flatMap(member => member.tupleIds),
         isOther: true
@@ -366,9 +419,12 @@
     }
 
     total = members.reduce((sum, member) => sum + member.value, 0);
+    const withTarget = members.filter(member => member.target !== null);
+    if (withTarget.length > 0) totalTarget = withTarget.reduce((sum, member) => sum + member.target, 0);
     items = members.map(member => ({
       ...member,
       percent: member.value / total,
+      achievement: getAchievement(member.value, member.target),
       color: RadialSettingsForm.colorFor(state, member.name, member.colorIndex, member.isOther)
     }));
     for (const name of [...selected]) {
@@ -389,9 +445,16 @@
     title.append(swatch, item.name);
     const lines = [[valueField.name, formatValue(item.value, item.label)]];
     if (state.tooltip.showPercent) lines.push(['% of total', formatPercent(item.percent)]);
-    const rows = [...lines, ...item.extras].map(([name, value]) => {
+    const targetField = getTargetField();
+    if (targetField) {
+      lines.push([targetField, item.target === null ? '–' : formatValue(item.target, item.targetLabel)]);
+      lines.push(['% of target', item.achievement === null ? '–' : formatPercent(item.achievement), getAchievementColor(item.achievement, '')]);
+    }
+    const rows = [...lines, ...item.extras].map(([name, value, color]) => {
       const row = createElement('div', 'tooltip-row');
-      row.append(createElement('span', 'tooltip-name', name), createElement('span', 'tooltip-value', value));
+      const valueNode = createElement('span', 'tooltip-value', value);
+      if (color) valueNode.style.color = color;
+      row.append(createElement('span', 'tooltip-name', name), valueNode);
       return row;
     });
     tooltipElement.replaceChildren(title, ...rows);
@@ -581,6 +644,22 @@
     return Math.max(9, Math.min(largest, room / (0.6 * Math.max(3, text.length))));
   }
 
+  // Hovered member's lines in the center: value, name and percent, and % of target when there is a target
+  function getCenterDetail (item) {
+    const lines = [
+      { className: 'center-value', text: formatValue(item.value, '', true), color: state.center.valueColor },
+      { className: 'center-caption', text: `${item.name} · ${formatPercent(item.percent)}`, color: item.color }
+    ];
+    if (getTargetField()) {
+      lines.push({
+        className: 'center-comparison',
+        text: item.achievement === null ? 'No target' : `${formatPercent(item.achievement)} of target`,
+        color: getAchievementColor(item.achievement, state.center.captionColor)
+      });
+    }
+    return lines;
+  }
+
   // Total or KPI, caption, and comparison in the hole; the hovered slice replaces them while hovered
   function drawCenter (parent, cx, cy, inner) {
     setCenterDetail = () => {};
@@ -589,8 +668,14 @@
     const room = inner * 1.6;
     const kpi = center.content === 'kpi' ? centerKpi : null;
     const mainText = center.content === 'caption' ? '' : kpi ? formatValue(kpi.value, kpi.label, true) : formatValue(total, '', true);
-    const valueSize = center.valueSize > 0 ? center.valueSize : fitFont(mainText || 'Total', room, inner * 0.36);
-    const captionSize = Math.max(10, valueSize * 0.42);
+    // Every member's detail uses one value size and one caption size, sized for the longest text, so the
+    // center text sits in the same place whichever slice is hovered
+    const details = center.hoverDetail ? items.map(getCenterDetail) : [];
+    const valueTexts = [mainText || 'Total', ...details.map(lines => lines[0].text)];
+    const valueSize = center.valueSize > 0
+      ? center.valueSize
+      : Math.min(...valueTexts.map(text => fitFont(text, room, inner * 0.36)));
+    const largestCaption = Math.max(10, valueSize * 0.42);
 
     let comparisonText = '';
     let comparisonColor = center.upColor;
@@ -602,40 +687,33 @@
     }
 
     const lines = [];
-    if (mainText) lines.push({ className: 'center-value', text: mainText, size: valueSize, color: center.valueColor });
-    if (center.caption) lines.push({ className: 'center-caption', text: center.caption, size: Math.min(captionSize, fitFont(center.caption, room, captionSize)), color: center.captionColor });
-    if (comparisonText) lines.push({ className: 'center-comparison', text: comparisonText, size: captionSize, color: comparisonColor });
+    if (mainText) lines.push({ className: 'center-value', text: mainText, color: center.valueColor });
+    if (center.caption) lines.push({ className: 'center-caption', text: center.caption, color: center.captionColor });
+    if (comparisonText) lines.push({ className: 'center-comparison', text: comparisonText, color: comparisonColor });
     if (lines.length === 0) return;
+    const captionTexts = [...lines, ...details.flat()].filter(line => line.className !== 'center-value').map(line => line.text);
+    const captionSize = Math.min(...captionTexts.map(text => fitFont(text, room, largestCaption)));
+    const sizeOf = line => line.className === 'center-value' ? valueSize : captionSize;
 
     const group = createSvgElement('g', { class: 'center' });
     // Stacks the lines, centered vertically on cy
     const layout = list => {
-      const height = list.reduce((sum, line) => sum + line.size * 1.15, 0);
+      const height = list.reduce((sum, line) => sum + sizeOf(line) * 1.15, 0);
       let y = cy - height / 2;
       group.replaceChildren();
       for (const line of list) {
-        addText(group, line.className, cx, y + line.size * 0.575, line.text, {
-          'text-anchor': 'middle', 'font-size': line.size.toFixed(1), fill: line.color
+        const size = sizeOf(line);
+        addText(group, line.className, cx, y + size * 0.575, line.text, {
+          'text-anchor': 'middle', 'font-size': size.toFixed(1), fill: line.color
         });
-        y += line.size * 1.15;
+        y += size * 1.15;
       }
     };
     layout(lines);
     parent.appendChild(group);
 
     if (center.hoverDetail) {
-      setCenterDetail = item => {
-        if (!item) {
-          layout(lines);
-          return;
-        }
-        const value = formatValue(item.value, item.label, true);
-        const caption = `${item.name} · ${formatPercent(item.percent)}`;
-        layout([
-          { className: 'center-value', text: value, size: Math.min(valueSize, fitFont(value, room, valueSize)), color: center.valueColor },
-          { className: 'center-caption', text: caption, size: Math.min(captionSize, fitFont(caption, room, captionSize)), color: item.color }
-        ]);
-      };
+      setCenterDetail = item => layout(item ? details[items.indexOf(item)] : lines);
     }
   }
 
@@ -798,38 +876,55 @@
     const legend = state.legend;
     legendElement.hidden = legend.position === 'none';
     if (legendElement.hidden) return;
-    const columns = ['auto', 'minmax(0, 1fr)'];
-    if (legend.showPercent) columns.push('auto');
-    if (legend.showValue) columns.push('auto');
-    legendElement.style.gridTemplateColumns = columns.join(' ');
+    const targetField = getTargetField();
+    const achievementCell = achievement => [
+      achievement === null ? '–' : formatPercent(achievement),
+      getAchievementColor(achievement, '')
+    ];
+    // Number columns after the dot and name: [key, shown, default name, cell for an item, cell for the total row]
+    const columns = [
+      ['share', legend.showPercent, 'Share', item => [formatPercent(item.percent)], () => [formatPercent(1)]],
+      ['value', legend.showValue, valueField.name, item => [formatValue(item.value, item.label)], () => [formatValue(total, '')]],
+      ['target', legend.showTarget && targetField, targetField,
+        item => [item.target === null ? '–' : formatValue(item.target, item.targetLabel)],
+        () => [totalTarget === null ? '–' : formatValue(totalTarget, '')]],
+      ['achievement', legend.showAchievement && targetField, '% of target',
+        item => achievementCell(item.achievement), () => achievementCell(getAchievement(total, totalTarget))]
+    ].filter(column => column[1]);
+    legendElement.style.gridTemplateColumns = ['auto', 'minmax(0, 1fr)', ...columns.map(() => 'auto')].join(' ');
     legendElement.style.fontSize = `${legend.fontSize}px`;
 
+    const numberCell = ([text, color]) => {
+      const cell = createElement('span', 'legend-number', text);
+      if (color) cell.style.color = color;
+      return cell;
+    };
     const makeRow = (className, cells) => {
       const row = createElement('div', className);
       row.append(...cells);
       return row;
     };
+    const headerText = (key, defaultName) => {
+      const header = legend.headers[key];
+      return header.show ? header.text || defaultName : '';
+    };
     const rows = [];
-    if (legend.header) {
-      const cells = [createElement('span'), createElement('span', 'legend-name', categoryField.name)];
-      if (legend.showPercent) cells.push(createElement('span', 'legend-number', '%'));
-      if (legend.showValue) cells.push(createElement('span', 'legend-number', valueField.name));
+    const headerTexts = [headerText('category', categoryField.name), ...columns.map(([key, , name]) => headerText(key, name))];
+    if (headerTexts.some(Boolean)) {
+      const cells = [createElement('span'), createElement('span', 'legend-name', headerTexts[0])];
+      cells.push(...headerTexts.slice(1).map(text => createElement('span', 'legend-number', text)));
       rows.push(makeRow('legend-row legend-head', cells));
     }
     items.forEach((item, index) => {
       const dot = createElement('span', 'legend-dot');
       dot.style.background = item.color;
-      const cells = [dot, createElement('span', 'legend-name', item.name)];
-      if (legend.showPercent) cells.push(createElement('span', 'legend-number', formatPercent(item.percent)));
-      if (legend.showValue) cells.push(createElement('span', 'legend-number', formatValue(item.value, item.label)));
+      const cells = [dot, createElement('span', 'legend-name', item.name), ...columns.map(column => numberCell(column[3](item)))];
       const row = makeRow('legend-row', cells);
       addInteractions(row, index);
       rows.push(row);
     });
     if (legend.totalRow) {
-      const cells = [createElement('span'), createElement('span', 'legend-name', 'Total')];
-      if (legend.showPercent) cells.push(createElement('span', 'legend-number', formatPercent(1)));
-      if (legend.showValue) cells.push(createElement('span', 'legend-number', formatValue(total, '')));
+      const cells = [createElement('span'), createElement('span', 'legend-name', 'Total'), ...columns.map(column => numberCell(column[4]()))];
       rows.push(makeRow('legend-row legend-total', cells));
     }
     legendElement.replaceChildren(...rows);
@@ -914,7 +1009,9 @@
       defaultState: mergeState({}),
       members: items.map(item => ({ name: item.name, isOther: Boolean(item.isOther), colorIndex: item.colorIndex })),
       centerFields: centerFields.map(field => field.name),
-      visibilityCandidates: getUnencodedFields()
+      categoryName: categoryField?.name || '',
+      valueName: valueField?.name || '',
+      detailFields: getUnencodedFields()
     };
   }
 
@@ -1030,18 +1127,20 @@
     valueField = { name: 'Revenue' };
     centerFields = [];
     rawRows = [
-      ['Gold Wallet', 61.4e6, 182340],
-      ['Mutual Fund', 47.5e6, 96410],
-      ['Global Savings', 35.6e6, 64120],
-      ['KTX', 29.7e6, 31870],
-      ['Corporate Bond', 23.8e6, 8240]
-    ].map(([product, revenue, accounts]) => ({
+      ['Gold Wallet', 61.4e6, 182340, 58e6],
+      ['Mutual Fund', 47.5e6, 96410, 52e6],
+      ['Global Savings', 35.6e6, 64120, 34e6],
+      ['KTX', 29.7e6, 31870, 33e6],
+      ['Corporate Bond', 23.8e6, 8240, 25e6]
+    ].map(([product, revenue, accounts, target]) => ({
       Product: { value: product },
       Revenue: { value: revenue },
-      Accounts: { value: accounts, formattedValue: numberFormat.format(accounts) }
+      Accounts: { value: accounts, formattedValue: numberFormat.format(accounts) },
+      'Revenue Target': { value: target }
     }));
     colorOrder = ChartColors.sortMembers(rawRows.map(row => getLabel(row.Product)));
     state.title = { ...state.title, show: true, text: 'Revenue Mix (YTD 2026)' };
+    state.target = { ...state.target, field: 'Revenue Target' };
     state.number = { format: 'currency', decimals: 1, units: 'millions', currencySymbol: '฿ ' };
     previewSettingsButton.hidden = false;
     previewSettingsButton.addEventListener('click', openSettings);

@@ -2,8 +2,8 @@
 
 // Builds the settings form used by both the Tableau "Format Extension" dialog and the in-page panel.
 // payload: { state, defaultState, members: [{ name, isOther, colorIndex }] in display order (colorIndex: the member's
-//   fixed palette slot, colors.js), centerFields: [name],
-//   visibilityCandidates: [field names on Detail or Tooltip] }
+//   fixed palette slot, colors.js), centerFields: [name], categoryName, valueName,
+//   detailFields: [field names on Detail or Tooltip] }
 window.RadialSettingsForm = (function () {
   // A member's color: its own choice, else the shared palette color for its fixed slot (colors.js)
   function colorFor (state, name, index, isOther) {
@@ -133,7 +133,7 @@ window.RadialSettingsForm = (function () {
 
       // Visible rows: a True/False field on Detail, like the combo chart's Visible categories
       draft.visibility = draft.visibility || { field: '' };
-      const candidates = payload.visibilityCandidates || [];
+      const candidates = payload.detailFields || [];
       const visibilitySection = section('Visible rows', [
         element('div', { class: 'row' }, [
           'Use only rows where',
@@ -147,6 +147,27 @@ window.RadialSettingsForm = (function () {
         ]),
         hint('Put a True/False field such as In Date Range on Detail, then choose it here. It works like Visible categories ' +
           'in the combo chart, so the same date range parameter can drive both charts.')
+      ]);
+
+      // Target: a measure on Detail that each member's value is compared with
+      const target = draft.target;
+      const hasTarget = candidates.includes(target.field);
+      const targetSection = section('Target', [
+        row('Target field', disable(select(
+          [['', 'None'], ...candidates.map(name => [name, name])],
+          hasTarget ? target.field : '',
+          'Target field',
+          value => { target.field = value; renderForm(); }
+        ), candidates.length === 0)),
+        element('div', { class: 'row' }, [
+          checkbox(target.colorize, 'Color % of target:', value => { target.colorize = value; renderForm(); }),
+          'met',
+          disable(colorInput(target.metColor, 'Target met color', value => { target.metColor = value; }), !target.colorize),
+          'below',
+          disable(colorInput(target.missedColor, 'Target missed color', value => { target.missedColor = value; }), !target.colorize)
+        ]),
+        hint('Put a target measure on Detail, then choose it here. The legend, tooltip, and hovered center then show each ' +
+          'member\'s value as a percent of its target.')
       ]);
 
       // Sort and group
@@ -246,8 +267,39 @@ window.RadialSettingsForm = (function () {
           'for the comparison. Use a calculation that gives one value for the whole chart, such as TOTAL(SUM([Revenue])) or a FIXED calculation.')
       ]);
 
-      // Legend
+      // Legend: a row per column with whether it shows, and its name in the header row
       const legend = draft.legend;
+      const columnRows = [
+        // [header key, label, show-column setting (none: always shown), default name, available]
+        ['category', 'Category', null, payload.categoryName || 'Category', true],
+        ['share', 'Share', 'showPercent', 'Share', true],
+        ['value', 'Value', 'showValue', payload.valueName || 'Value', true],
+        ['target', 'Target', 'showTarget', hasTarget ? target.field : 'Target', hasTarget],
+        ['achievement', '% of target', 'showAchievement', '% of target', hasTarget]
+      ].map(([key, label, showKey, defaultName, available]) => {
+        const header = legend.headers[key];
+        const showColumn = element('input', {
+          type: 'checkbox',
+          checked: showKey ? legend[showKey] : true,
+          disabled: !showKey || !available,
+          'aria-label': `Show the ${label} column`
+        });
+        if (showKey) showColumn.addEventListener('change', () => { legend[showKey] = showColumn.checked; });
+        const showName = element('input', { type: 'checkbox', checked: header.show, disabled: !available, 'aria-label': `Show the ${label} column name` });
+        showName.addEventListener('change', () => { header.show = showName.checked; });
+        const nameText = disable(textInput(header.text, `${label} column name`, 'label-text', value => { header.text = value.trim(); }), !available);
+        nameText.placeholder = defaultName;
+        return element('tr', {}, [
+          element('td', { text: label }),
+          element('td', {}, [showColumn]),
+          element('td', {}, [showName]),
+          element('td', {}, [nameText])
+        ]);
+      });
+      const columnTable = element('table', { class: 'measure-table' }, [
+        element('thead', {}, [element('tr', {}, ['Column', 'Show', 'Show name', 'Name'].map(text => element('th', { text })))]),
+        element('tbody', {}, columnRows)
+      ]);
       const legendSection = section('Legend', [
         row('Position', select([
           ['bottom', 'Below the chart'],
@@ -256,14 +308,13 @@ window.RadialSettingsForm = (function () {
           ['left', 'Left of the chart'],
           ['none', 'Hidden']
         ], legend.position, 'Legend position', value => { legend.position = value; })),
+        columnTable,
         element('div', { class: 'check-list' }, [
-          checkbox(legend.showPercent, 'Percent column', value => { legend.showPercent = value; }),
-          checkbox(legend.showValue, 'Value column', value => { legend.showValue = value; }),
-          checkbox(legend.header, 'Header row', value => { legend.header = value; }),
           checkbox(legend.totalRow, 'Total row', value => { legend.totalRow = value; })
         ]),
         row('Font size', numberInput(legend.fontSize, 9, 24, 'Legend font size', value => { legend.fontSize = value; })),
-        hint('A legend at the side moves below the chart when the sheet is narrow.')
+        hint('Column names show in a header row above the members; leave a name empty to use the one shown in gray. ' +
+          'Target columns need a target field. A legend at the side moves below the chart when the sheet is narrow.')
       ]);
 
       // Number format
@@ -351,6 +402,7 @@ window.RadialSettingsForm = (function () {
       container.append(
         appearance,
         visibilitySection,
+        targetSection,
         chart,
         slices,
         group,

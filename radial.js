@@ -288,6 +288,14 @@
     return { value: numbers.reduce((sum, number) => sum + number, 0), label: '' };
   }
 
+  // Alphabetical order for text; dates and numbers in their own order
+  function compareNames (a, b) {
+    const x = a.key instanceof Date ? a.key.getTime() : a.key;
+    const y = b.key instanceof Date ? b.key.getTime() : b.key;
+    if (typeof x === 'number' && typeof y === 'number') return x - y;
+    return String(x ?? a.name).localeCompare(String(y ?? b.name), undefined, { numeric: true, sensitivity: 'base' });
+  }
+
   // Fields on Detail split a member into several rows; combine them into one item per member.
   function buildItems () {
     items = [];
@@ -322,21 +330,25 @@
         label: rows.length === 1 ? getLabel(rows[0][valueField.name]) : '',
         extras: extraFields.map(field => [field, combineExtra(rows.map(row => row[field]))]),
         tupleIds: rows.map(row => rowTuples.get(row)).filter(Boolean),
+        key: getValue(rows[0][categoryField.name]),
         order: members.length
       });
     }
 
     const sorters = {
-      'value-desc': (a, b) => b.value - a.value,
-      'value-asc': (a, b) => a.value - b.value,
-      name: (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }),
+      'value-desc': (a, b) => b.value - a.value || a.order - b.order,
+      'value-asc': (a, b) => a.value - b.value || a.order - b.order,
+      name: compareNames,
       data: (a, b) => a.order - b.order
     };
+    // Colors go by size, largest first, so a member keeps its color whichever sort is chosen
+    const bySize = [...members].sort(sorters['value-desc']);
+    bySize.forEach((member, rank) => { member.colorIndex = rank; });
     members.sort(sorters[state.sort] || sorters['value-desc']);
 
     if (state.topN > 0 && members.length > state.topN + 1) {
       // The largest members stay, whatever the sort; the rest become one slice at the end
-      const largest = new Set([...members].sort(sorters['value-desc']).slice(0, state.topN));
+      const largest = new Set(bySize.slice(0, state.topN));
       const rest = members.filter(member => !largest.has(member));
       members = members.filter(member => largest.has(member));
       members.push({
@@ -350,10 +362,10 @@
     }
 
     total = members.reduce((sum, member) => sum + member.value, 0);
-    items = members.map((member, index) => ({
+    items = members.map(member => ({
       ...member,
       percent: member.value / total,
-      color: RadialSettingsForm.colorFor(state, member.name, index, member.isOther)
+      color: RadialSettingsForm.colorFor(state, member.name, member.colorIndex, member.isOther)
     }));
     for (const name of [...selected]) {
       if (!items.some(item => item.name === name)) selected.delete(name);
@@ -889,7 +901,7 @@
     return {
       state,
       defaultState: mergeState({}),
-      members: items.map(item => ({ name: item.name, isOther: Boolean(item.isOther) })),
+      members: items.map(item => ({ name: item.name, isOther: Boolean(item.isOther), colorIndex: item.colorIndex })),
       centerFields: centerFields.map(field => field.name),
       visibilityCandidates: getUnencodedFields()
     };

@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Radial Chart</title>
+    <link rel="stylesheet" href="./settings.css">
+    <style>
+      :root {
+        color: #202124;
+        font: 14px "Segoe UI", Arial, sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+      }
+
+      body {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        min-width: 240px;
+        background: #fff;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex: 0 0 auto;
+        padding: 10px 16px 0;
+      }
+
+      header:has(#title[hidden]):has(#preview-settings[hidden]) {
+        display: none;
+      }
+
+      #title {
+        flex: 1 1 auto;
+        margin: 0;
+        font-size: 17px;
+        font-weight: 700;
+      }
+
+      #preview-settings {
+        margin-left: auto;
+        padding: 3px 10px;
+        border: 1px solid #dadce0;
+        border-radius: 4px;
+        background: #fff;
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      #layout {
+        display: flex;
+        flex: 1 1 auto;
+        min-height: 0;
+        gap: 8px;
+        padding: 4px 12px 12px;
+      }
+
+      #layout.legend-bottom,
+      #layout.legend-none {
+        flex-direction: column;
+      }
+
+      #layout.legend-top {
+        flex-direction: column-reverse;
+      }
+
+      #layout.legend-right {
+        flex-direction: row;
+        align-items: center;
+      }
+
+      #layout.legend-left {
+        flex-direction: row-reverse;
+        align-items: center;
+      }
+
+      #chart {
+        position: relative;
+        flex: 1 1 auto;
+        min-width: 0;
+        min-height: 160px;
+        align-self: stretch;
+      }
+
+      #chart svg {
+        position: absolute;
+        inset: 0;
+        display: block;
+        width: 100%;
+        height: 100%;
+        overflow: visible;
+      }
+
+      #message {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        color: #5f6368;
+        text-align: center;
+      }
+
+      #message[hidden] {
+        display: none;
+      }
+
+      .slice {
+        cursor: default;
+        transition: opacity 0.15s, transform 0.15s;
+      }
+
+      .clickable {
+        cursor: pointer;
+      }
+
+      .dimmed {
+        opacity: 0.3;
+      }
+
+      .leader-line {
+        stroke-width: 1;
+      }
+
+      .center-value {
+        font-weight: 700;
+      }
+
+      .center-caption {
+        fill: #5f6368;
+      }
+
+      .center-comparison {
+        font-weight: 600;
+      }
+
+      .reveal {
+        stroke-dashoffset: 100;
+        animation: reveal 0.8s ease-out forwards;
+      }
+
+      .reveal.reverse {
+        stroke-dashoffset: -100;
+      }
+
+      @keyframes reveal {
+        to {
+          stroke-dashoffset: 0;
+        }
+      }
+
+      .fade-in {
+        opacity: 0;
+        animation: fade-in 0.3s ease-out 0.6s forwards;
+      }
+
+      @keyframes fade-in {
+        to {
+          opacity: 1;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .reveal,
+        .reveal.reverse {
+          stroke-dashoffset: 0;
+          animation: none;
+        }
+
+        .fade-in {
+          opacity: 1;
+          animation: none;
+        }
+      }
+
+      #legend {
+        flex: 0 0 auto;
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto auto;
+        align-items: center;
+        gap: 6px 0;
+        max-height: 45%;
+        overflow-y: auto;
+        font-size: 13px;
+      }
+
+      #legend:empty,
+      #legend[hidden] {
+        display: none;
+      }
+
+      #layout.legend-right #legend,
+      #layout.legend-left #legend {
+        max-width: 50%;
+        max-height: 100%;
+      }
+
+      /* Cell padding rather than a column gap, so the total row's divider runs unbroken */
+      .legend-row > * + * {
+        padding-left: 14px;
+      }
+
+      .legend-head > * {
+        color: #5f6368;
+        font-size: 0.85em;
+        font-weight: 600;
+      }
+
+      .legend-total > * {
+        padding-top: 6px;
+        border-top: 1px solid #dadce0;
+        font-weight: 600;
+      }
+
+      .legend-row.selected .legend-name {
+        font-weight: 600;
+      }
+
+      .legend-row {
+        display: contents;
+      }
+
+      .legend-row > * {
+        transition: opacity 0.15s;
+      }
+
+      .legend-row.dimmed > * {
+        opacity: 0.35;
+      }
+
+      .legend-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+      }
+
+      .legend-name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .legend-number {
+        text-align: right;
+        white-space: nowrap;
+      }
+
+      #tooltip {
+        position: absolute;
+        z-index: 2;
+        max-width: 320px;
+        padding: 8px 10px;
+        border: 1px solid #dadce0;
+        border-radius: 4px;
+        background: #fff;
+        box-shadow: 0 2px 6px rgba(60, 64, 67, 0.25);
+        font-size: 12px;
+        pointer-events: none;
+      }
+
+      #tooltip[hidden] {
+        display: none;
+      }
+
+      .tooltip-title {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 4px;
+        font-weight: 600;
+      }
+
+      .tooltip-row {
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
+        line-height: 1.5;
+      }
+
+      .tooltip-name {
+        color: #5f6368;
+      }
+
+      .tooltip-value {
+        margin-left: auto;
+        padding-left: 12px;
+        font-weight: 600;
+        text-align: right;
+      }
+
+      #settings-overlay {
+        position: absolute;
+        inset: 0;
+        z-index: 3;
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        padding: 16px;
+        overflow-y: auto;
+        background: rgba(32, 33, 36, 0.35);
+      }
+
+      #settings-overlay[hidden] {
+        display: none;
+      }
+
+      #settings-overlay .settings-form {
+        width: 100%;
+        max-width: 540px;
+        padding: 12px 16px;
+        border-radius: 6px;
+        background: #fff;
+        box-shadow: 0 4px 16px rgba(32, 33, 36, 0.3);
+      }
+    </style>
+    <script defer src="./vendor/tableau.extensions.1.latest.min.js"></script>
+    <script defer src="./radial-settings-form.js"></script>
+    <script defer src="./_t_name.js"></script>
+  </head>
+  <body>
+    <header>
+      <h1 id="title" hidden></h1>
+      <button id="preview-settings" type="button" hidden>Settings</button>
+    </header>
+    <div id="layout" class="legend-bottom">
+      <main id="chart" aria-label="Radial chart">
+        <div id="message" role="status" hidden></div>
+      </main>
+      <div id="legend" aria-label="Legend"></div>
+    </div>
+    <div id="tooltip" role="tooltip" hidden></div>
+    <div id="settings-overlay" hidden>
+      <div id="settings-form" class="settings-form" role="dialog" aria-label="Radial chart settings"></div>
+    </div>
+  </body>
+</html>

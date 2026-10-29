@@ -1,7 +1,7 @@
 'use strict';
 
 // Builds the settings form used by both the Tableau "Format Extension" dialog and the in-page panel.
-// payload: { state, defaultState, members: [{ name, isOther }] in display order, centerFields: [name],
+// payload: { state, defaultState, members: [{ name, isOther, colorIndex }] in display order, centerFields: [name],
 //   visibilityCandidates: [field names on Detail or Tooltip] }
 window.RadialSettingsForm = (function () {
   const PALETTES = {
@@ -20,7 +20,7 @@ window.RadialSettingsForm = (function () {
   ];
   const OTHER_COLOR = '#bdc1c6';
 
-  // A member's color: its own choice, else the palette color for its position
+  // A member's color: its own choice, else the palette color for its size rank
   function colorFor (state, name, index, isOther) {
     if (state.colors[name]) return state.colors[name];
     if (isOther) return OTHER_COLOR;
@@ -179,8 +179,8 @@ window.RadialSettingsForm = (function () {
       ]);
 
       // Colors
-      const swatches = payload.members.map(({ name, isOther }, index) => element('label', { class: 'check' }, [
-        colorInput(colorFor(draft, name, index, isOther), `Color for ${name}`, value => { draft.colors[name] = value; }),
+      const swatches = payload.members.map(({ name, isOther, colorIndex }) => element('label', { class: 'check' }, [
+        colorInput(colorFor(draft, name, colorIndex, isOther), `Color for ${name}`, value => { draft.colors[name] = value; }),
         ` ${name}`
       ]));
       const resetColors = element('button', { type: 'button', text: 'Use palette colors' });

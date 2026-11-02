@@ -56,7 +56,7 @@ Open the settings from the extension's dropdown on the Marks card (**Format Exte
 - **Category axis**: title and label orientation (horizontal, 45°, or 90°).
 - **Forecast** (like Tableau's Forecast Options): show or hide the forecast and choose which measures to forecast; length (automatic, one season, or exactly N periods); ignore the last N periods; model (Automatic, Automatic without seasonality, or Custom trend and season, each none, additive, or multiplicative); and 90/95/99% prediction intervals. Forecasts use exponential smoothing, and the automatic model is the candidate with the lowest AICc. Seasonality needs at least two full seasons of data (24 months or 8 quarters). Forecast marks use each measure's mark type in a lighter shade.
 - **Tooltip**: turn tooltips on or off, and use the label number format in them.
-- **Animation**: animate when the data changes (bars grow from the axis, lines draw in from the left, and labels fade in), and animate together with the radial chart and KPI cards.
+- **Interaction and animation**: click a Color member's bar part or legend item to highlight it (the other members fade; Ctrl+click adds members, clicking empty space clears it), highlight together with the radial chart, animate when the data changes (bars grow from the axis, lines draw in from the left, and labels fade in), and animate together with the radial chart and KPI cards.
 
 Both extensions list their Format Extension sections in the same order: title and background, visible rows or categories, the chart's marks, colors, labels, chart-specific sections, tooltip, then interaction and animation.
 
@@ -117,11 +117,13 @@ A third, separate Viz Extension (`radial.trex`, served at `http://localhost:8765
    - **Legend**: below, above, right, or left of the chart (side legends move below on narrow sheets), or hidden; which columns show (share, value, target, % of target); whether each column's name shows in a header row above the members, and its text (the field name, *Share*, or *% of target* when left empty); total row; font size.
    - **Number format**: Automatic (the field's Tableau format), number, currency, or percentage; units (none, automatic K/M/B, thousands, millions, billions); decimals; currency symbol (end it with a space, as in ฿ followed by a space, to get "฿ 61.4M"); percent decimals.
    - **Tooltip**: on or off; the extension's tooltip (value, percent of total, and Tooltip fields) or Tableau's own tooltip from the Tooltip shelf. Tableau's tooltip is used for members drawn from a single mark; members split by a field on Detail and the *Other* slice use the extension's tooltip.
-   - **Interaction and animation**: on hover, dim the other slices, pop the slice out, both, or nothing; click to select in Tableau; sweep the slices in when the data changes, together with the combo chart and KPI cards; the background track behind radial bars.
+   - **Interaction and animation**: on hover, dim the other slices, pop the slice out, both, or nothing; click to select in Tableau; highlight together with the combo chart; sweep the slices in when the data changes, together with the combo chart and KPI cards; the background track behind radial bars.
 
 **Linked animation.** With *Animate together* on, the combo chart, radial chart, and KPI cards on one dashboard animate in step: when one gets new data (for example from a shared date range parameter), the others replay their animations from the same moment, and a chart whose data arrives a little later joins in part way, so both finish together. The extensions talk through the browser (`chart-sync.js`), so this works when both are served from the same site, such as the GitHub Pages copies.
 
 Clicking a slice or legend row selects that member's marks in Tableau, so dashboard filter and highlight actions run from it. Ctrl+click (Cmd+click on a Mac) adds to or removes from the selection, and clicking empty space clears it.
+
+**Linked highlight.** With *Highlight together* on in both charts, selecting a slice highlights the same member in the combo chart's Color bars, and clicking a member in the combo chart selects its slice here (members inside the *Other* slice select *Other*). It matches members by name, so put the same field on the radial chart's Category and the combo chart's Color. Like linked animation, it needs both extensions served from the same site. The highlight is only visual: the combo chart doesn't select marks in Tableau, and a slice selected this way doesn't run dashboard actions.
 
 Percentages are each member's share of the total of the members shown, after filters. Zero and negative values can't be drawn as slices, so they are left out and counted in a note at the bottom of the chart.
 

@@ -4,11 +4,13 @@
 // they share an animation clock over a BroadcastChannel (same site only): when one chart starts animating because
 // its data changed, the others replay theirs from the same moment, and a chart whose new data arrives part way
 // through joins in at the same point. Pages use the elapsed time as a negative CSS animation delay (--elapsed).
+// The same channel shares click highlights: clicking a radial slice highlights that member in the combo chart, and back.
 window.ChartSync = (function () {
   // ms, long enough to cover every chart's animation, label fade-in included
   const DURATION = 1000;
   const channel = 'BroadcastChannel' in window ? new BroadcastChannel('chart-animation') : null;
   const listeners = [];
+  const highlightListeners = [];
   // When the current shared animation started (epoch ms), so frames on the same computer agree on it
   let startTime = -Infinity;
 
@@ -28,8 +30,22 @@ window.ChartSync = (function () {
     listeners.push(callback);
   }
 
+  // Tells the other charts which members were highlighted by a click (an empty list clears it)
+  function shareHighlight (names) {
+    channel?.postMessage({ highlight: names });
+  }
+
+  // callback(names) highlights the members another chart highlighted
+  function onPartnerHighlight (callback) {
+    highlightListeners.push(callback);
+  }
+
   if (channel) {
     channel.onmessage = ({ data }) => {
+      if (data.highlight) {
+        highlightListeners.forEach(callback => callback(data.highlight));
+        return;
+      }
       // Already animating, for example because the same parameter change reached this chart first
       if (Date.now() - startTime < DURATION) return;
       startTime = data.time;
@@ -37,5 +53,5 @@ window.ChartSync = (function () {
     };
   }
 
-  return { begin, onPartnerStart };
+  return { begin, onPartnerStart, shareHighlight, onPartnerHighlight };
 })();

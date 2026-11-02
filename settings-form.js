@@ -389,12 +389,19 @@ window.ComboSettingsForm = (function () {
         checkbox(labels.applyToTooltips, 'Use the label number format in tooltips', checked => { labels.applyToTooltips = checked; })
       ]);
 
-      // Animation
-      const animationSection = section('Animation', [
+      // Interaction and animation
+      const animationSection = section('Interaction and animation', [
         element('div', { class: 'check-list' }, [
+          checkbox(draft.display.highlight, 'Click a Color member to highlight it', checked => { draft.display.highlight = checked; }),
+          checkbox(draft.display.syncHighlight, 'Highlight together with the other charts', checked => { draft.display.syncHighlight = checked; }),
           checkbox(draft.display.animate, 'Animate when the data changes', checked => { draft.display.animate = checked; }),
           checkbox(draft.display.syncAnimation, 'Animate together with the other charts', checked => { draft.display.syncAnimation = checked; })
         ]),
+        element('p', {
+          class: 'hint',
+          text: 'Clicking a Color member\'s bar part or legend item fades the other members; Ctrl+click adds members, and clicking ' +
+            'empty space clears it. With Highlight together, selecting a radial slice highlights the same member here, and back.'
+        }),
         element('p', {
           class: 'hint',
           text: 'Bars grow, lines draw in from the left, and labels fade in. Linked charts on the same dashboard animate in step ' +

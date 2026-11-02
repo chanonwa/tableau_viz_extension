@@ -23,8 +23,10 @@
   const DEFAULT_STATE = {
     series: {},
     // animate: bars grow, lines draw in, and labels fade in when the data changes.
-    // syncAnimation: play it together with the other charts on the same dashboard (chart-sync.js)
-    display: { tooltips: true, animate: true, syncAnimation: true },
+    // syncAnimation: play it together with the other charts on the same dashboard (chart-sync.js).
+    // highlight: clicking a Color member's bar part or legend item dims the other members, like selecting a radial slice.
+    // syncHighlight: share those highlights with the other charts (chart-sync.js)
+    display: { tooltips: true, animate: true, syncAnimation: true, highlight: true, syncHighlight: true },
     // An optional title above the legend, for when the worksheet title is turned off, as in the radial chart
     title: { show: false, text: '', color: '#1d5fa8', fontSize: 17 },
     background: '#ffffff',
@@ -130,6 +132,8 @@
   // Combined row -> Set of Bar Style values in that category
   const rowStyles = new WeakMap();
   let tooltipContent = null;
+  // Color members highlighted by a click here or in another chart
+  const highlighted = new Set();
   // Why the next render animates: 'data' (new data), 'local' (settings, or another chart started animating),
   // or null (resize: no animation)
   let animateNext = 'data';
@@ -141,7 +145,9 @@
       display: {
         tooltips: saved.display?.tooltips ?? DEFAULT_STATE.display.tooltips,
         animate: saved.display?.animate ?? DEFAULT_STATE.display.animate,
-        syncAnimation: saved.display?.syncAnimation ?? DEFAULT_STATE.display.syncAnimation
+        syncAnimation: saved.display?.syncAnimation ?? DEFAULT_STATE.display.syncAnimation,
+        highlight: saved.display?.highlight ?? DEFAULT_STATE.display.highlight,
+        syncHighlight: saved.display?.syncHighlight ?? DEFAULT_STATE.display.syncHighlight
       },
       title: { ...DEFAULT_STATE.title, ...saved.title },
       background: saved.background || DEFAULT_STATE.background,
@@ -749,7 +755,17 @@
       addGroup([note]);
     } else {
       // Bar Style decides the fill when it is in use
-      if (hasColor) addGroup(colorMembers.map(member => createFillItem(member, getMemberColor(member), hasStyle ? 'solid' : getMemberFill(member))));
+      if (hasColor) {
+        addGroup(colorMembers.map(member => {
+          const item = createFillItem(member, getMemberColor(member), hasStyle ? 'solid' : getMemberFill(member));
+          item.dataset.member = member;
+          if (state.display.highlight) {
+            item.classList.add('clickable');
+            item.addEventListener('click', event => toggleHighlight(member, event));
+          }
+          return item;
+        }));
+      }
       // Gray swatches show the fill only, since colors come from Color or the measure
       if (hasStyle) addGroup(styleValues.map(style => createFillItem(style, hasColor ? '#6b6f76' : getSeries(primaryBar).color, getStyleFill(style))));
     }
@@ -1097,19 +1113,23 @@
           y: Math.min(fromY, toY),
           width: Math.max(1, width - 2),
           height: Math.max(1, Math.abs(fromY - toY)),
-          ...getBarPaint(color, fill, sideBySide && !styleField ? 'none' : state.background)
+          ...getBarPaint(color, fill, sideBySide && !styleField ? 'none' : state.background),
+          ...(segment.member !== null ? { 'data-member': segment.member } : {})
         }));
 
         if (showBreakdownLabels && shouldLabelSegment.get(segment.key)(categoryIndex)) {
           const text = formatLabel(item.value, item.label);
           // Shaded fills are mostly light, so labels on them use dark text
           const insideColor = fill === 'solid' ? color : '#ffffff';
+          let label = null;
           if (sideBySide && !styleField) {
-            addLabel(labelLayer, text, left + width / 2, barLabelY(fromY, toY), labelInsideBar ? insideColor : color, { inside: labelInsideBar });
+            label = addLabel(labelLayer, text, left + width / 2, barLabelY(fromY, toY), labelInsideBar ? insideColor : color, { inside: labelInsideBar });
           } else if (Math.abs(fromY - toY) >= labelFontSize + 2) {
             // Stacked segments are labelled in their middle; segments too thin for the text are skipped
-            addLabel(labelLayer, text, left + width / 2, (fromY + toY) / 2 + labelFontSize / 3, insideColor, { inside: true });
+            label = addLabel(labelLayer, text, left + width / 2, (fromY + toY) / 2 + labelFontSize / 3, insideColor, { inside: true });
           }
+          // Dims with its bar part
+          if (label && segment.member !== null) label.dataset.member = segment.member;
         }
       });
 
@@ -1389,7 +1409,11 @@
           height: plotHeight,
           class: 'hover-target'
         });
-        target.addEventListener('mousemove', event => showTooltip(event, content));
+        target.addEventListener('mousemove', event => {
+          showTooltip(event, content);
+          // The hover column covers the bars; show a pointer over the parts a click highlights
+          if (state.display.highlight) target.style.cursor = getMemberAt(event) === null ? '' : 'pointer';
+        });
         target.addEventListener('mouseleave', hideTooltip);
         svg.appendChild(target);
       });
@@ -1405,7 +1429,71 @@
       });
     }
 
+    // Clicking a Color member's bar part highlights it; clicking anywhere else clears the highlight
+    if (state.display.highlight && colorField) {
+      svg.addEventListener('click', event => {
+        const member = getMemberAt(event);
+        if (member === null) clearHighlight();
+        else toggleHighlight(member, event);
+      });
+    }
+
     chartElement.appendChild(svg);
+    applyHighlight();
+  }
+
+  // Highlight
+
+  // The Color member of the bar part under the pointer, or null. Bar parts sit under the hover columns.
+  function getMemberAt (event) {
+    const node = document.elementsFromPoint(event.clientX, event.clientY)
+      .find(element => element.tagName === 'rect' && element.dataset.member !== undefined);
+    return node ? node.dataset.member : null;
+  }
+
+  // Dims the bar parts, labels, and legend items of the members that are not highlighted
+  function applyHighlight () {
+    for (const node of document.querySelectorAll('[data-member]')) {
+      node.classList.toggle('dimmed', highlighted.size > 0 && !highlighted.has(node.dataset.member));
+      node.classList.toggle('selected', highlighted.has(node.dataset.member));
+    }
+  }
+
+  // Click highlights one member; Ctrl/Cmd+click adds to or removes from the highlight, as in the radial chart
+  function toggleHighlight (member, event) {
+    event.stopPropagation();
+    if (event.ctrlKey || event.metaKey) {
+      if (highlighted.has(member)) highlighted.delete(member);
+      else highlighted.add(member);
+    } else if (highlighted.size === 1 && highlighted.has(member)) {
+      highlighted.clear();
+    } else {
+      highlighted.clear();
+      highlighted.add(member);
+    }
+    applyHighlight();
+    shareHighlight();
+  }
+
+  function clearHighlight () {
+    if (highlighted.size === 0) return;
+    highlighted.clear();
+    applyHighlight();
+    shareHighlight();
+  }
+
+  function shareHighlight () {
+    if (state.display.syncHighlight) ChartSync.shareHighlight([...highlighted]);
+  }
+
+  // Another chart highlighted members, for example a selected radial slice; members not in this chart are ignored
+  function followHighlight (names) {
+    if (!state.display.highlight || !state.display.syncHighlight) return;
+    highlighted.clear();
+    for (const name of names) {
+      if (colorMembers.includes(name)) highlighted.add(name);
+    }
+    applyHighlight();
   }
 
   function convertPageToRows (page) {
@@ -1535,6 +1623,9 @@
         colorOrder = order;
         rawRows = rows;
         rebuildRows();
+        for (const member of [...highlighted]) {
+          if (!colorMembers.includes(member)) highlighted.delete(member);
+        }
         animateNext = 'data';
         render();
       } catch (error) {
@@ -1586,6 +1677,8 @@
     animateNext = 'local';
     render();
   });
+
+  ChartSync.onPartnerHighlight(followHighlight);
 
   // Redraw at most once per frame while the sheet is resized
   let resizeFrame = 0;

@@ -97,7 +97,8 @@
     // hoverEffect: 'dim' | 'explode' | 'both' | 'none'
     // select: clicking a slice or legend row selects its marks in Tableau, for dashboard actions
     // syncAnimation: play the animation together with the other charts on the same dashboard (chart-sync.js)
-    display: { tooltips: true, hoverEffect: 'both', select: true, track: true, animate: true, syncAnimation: true }
+    // syncHighlight: share click selections with the other charts (chart-sync.js)
+    display: { tooltips: true, hoverEffect: 'both', select: true, track: true, animate: true, syncAnimation: true, syncHighlight: true }
   };
   const SETTINGS_KEY = 'radialChartState';
   const UNITS = { thousands: [1e3, 'K'], millions: [1e6, 'M'], billions: [1e9, 'B'] };
@@ -414,6 +415,8 @@
         targetLabel: '',
         extras: [['Includes', rest.length <= 5 ? rest.map(member => member.name).join(', ') : `${rest.length} members`]],
         tupleIds: rest.flatMap(member => member.tupleIds),
+        // For highlighting the same members in the other charts
+        memberNames: rest.map(member => member.name),
         isOther: true
       });
     }
@@ -544,6 +547,7 @@
     }
     applyEmphasis();
     selectInTableau();
+    shareHighlight();
   }
 
   function clearSelection () {
@@ -551,6 +555,24 @@
     selected.clear();
     applyEmphasis();
     selectInTableau();
+    shareHighlight();
+  }
+
+  // The other charts highlight the selected members; the Other slice stands for the members it combines
+  function shareHighlight () {
+    if (!state.display.syncHighlight) return;
+    ChartSync.shareHighlight(items.filter(item => selected.has(item.name)).flatMap(item => item.isOther ? item.memberNames : [item.name]));
+  }
+
+  // Another chart highlighted members: show them as selected here too, without selecting marks in Tableau
+  function followHighlight (names) {
+    if (!state.display.syncHighlight || !state.display.select) return;
+    const wanted = new Set(names);
+    selected.clear();
+    for (const item of items) {
+      if (wanted.has(item.name) || (item.isOther && item.memberNames.some(name => wanted.has(name)))) selected.add(item.name);
+    }
+    applyEmphasis();
   }
 
   function selectInTableau () {
@@ -1154,6 +1176,8 @@
     animateNext = 'local';
     render();
   });
+
+  ChartSync.onPartnerHighlight(followHighlight);
 
   let resizeFrame = 0;
   window.addEventListener('resize', () => {

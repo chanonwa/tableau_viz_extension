@@ -186,6 +186,23 @@
         fill: rgba(60, 64, 67, 0.06);
       }
 
+      /* Click highlight: the other Color members fade, as in the radial chart */
+      [data-member] {
+        transition: opacity 0.15s;
+      }
+
+      .dimmed {
+        opacity: 0.25;
+      }
+
+      .legend-item.clickable {
+        cursor: pointer;
+      }
+
+      .legend-item.selected {
+        font-weight: 600;
+      }
+
       #tooltip {
         position: absolute;
         z-index: 2;

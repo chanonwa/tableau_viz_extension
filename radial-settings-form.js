@@ -366,10 +366,12 @@ window.RadialSettingsForm = (function () {
           checkbox(display.select, 'Click to select in Tableau', value => { display.select = value; }),
           checkbox(display.animate, 'Animate when the data changes', value => { display.animate = value; }),
           checkbox(display.syncAnimation, 'Animate together with the other charts', value => { display.syncAnimation = value; }),
+          checkbox(display.syncHighlight, 'Highlight together with the other charts', value => { display.syncHighlight = value; }),
           radial ? checkbox(display.track, 'Background track', value => { display.track = value; }) : ''
         ]),
         hint('Clicking a slice or legend row selects its marks, so dashboard filter and highlight actions work. ' +
-          'Ctrl+click adds to the selection; click empty space to clear it.')
+          'Ctrl+click adds to the selection; click empty space to clear it. With Highlight together, the combo chart ' +
+          'highlights the same members in its Color bars, and clicking there selects the slice here.')
       ]);
 
       // Title and background

@@ -1038,8 +1038,14 @@
     };
   }
 
+  function getColors () {
+    return { palette: state.palette, colors: state.colors };
+  }
+
   function applySettings (newState) {
+    const colorsBefore = JSON.stringify(getColors());
     state = mergeState(newState);
+    if (JSON.stringify(getColors()) !== colorsBefore) ChartColors.colorsChanged();
     saveState();
     animateNext = 'local';
     update();
@@ -1179,6 +1185,24 @@
 
   ChartSync.onPartnerHighlight(followHighlight);
 
+  // Shares the palette, picked member colors, and color order with the combo chart (colors.js)
+  function linkColors () {
+    ChartColors.linkColors({
+      getColors,
+      applyColors: ({ palette, colors }) => {
+        state.palette = palette;
+        state.colors = colors;
+        saveState();
+      },
+      recolor: async () => {
+        // Before the first data arrives, the refresh picks up the new colors
+        if (!categoryField) return;
+        colorOrder = await ChartColors.getColorOrder(worksheet, categoryField.name, rawRows.map(row => getLabel(row[categoryField.name])));
+        update();
+      }
+    });
+  }
+
   let resizeFrame = 0;
   window.addEventListener('resize', () => {
     cancelAnimationFrame(resizeFrame);
@@ -1194,6 +1218,7 @@
           return;
         }
         loadState();
+        linkColors();
         updateFromTableau();
       })
       .catch(error => showMessage(`Unable to initialize the Tableau extension: ${error.message || error}`));

@@ -56,6 +56,81 @@ window.ChartColors = (function () {
     }
   }
 
+  // Settings are saved per extension, so each chart keeps its own copy of the color scheme (palette, picked member
+  // colors, and color orders). Linked charts share it over a BroadcastChannel (same site only) and agree on the
+  // newest copy, so a member has the same color in every chart and a color changed in one chart changes in all.
+  const UPDATED_KEY = 'colorSchemeUpdated';
+  const channel = 'BroadcastChannel' in window ? new BroadcastChannel('chart-colors') : null;
+  // { getColors: () => ({ palette, colors }), applyColors({ palette, colors }), recolor() }, from linkColors
+  let link = null;
+  // When this chart's scheme last changed (epoch ms; 0 = before charts shared colors)
+  let updated = 0;
+
+  function setSetting (key, value) {
+    try {
+      tableau.extensions.settings.set(key, value);
+    } catch (error) {
+      // Outside Tableau; the scheme still holds for this page
+    }
+  }
+
+  function getScheme () {
+    const { palette, colors } = link.getColors();
+    return { palette, colors, orders: loadOrders(), updated };
+  }
+
+  function getContent (scheme) {
+    return JSON.stringify([scheme.palette, scheme.colors, scheme.orders]);
+  }
+
+  // The newer scheme wins; equal times (such as two charts set up before colors were shared) are settled by content,
+  // so every chart picks the same one
+  function isNewer (a, b) {
+    return a.updated !== b.updated ? a.updated > b.updated : getContent(a) > getContent(b);
+  }
+
+  function share (type) {
+    if (link) channel?.postMessage({ type, scheme: getScheme() });
+  }
+
+  async function adopt (scheme) {
+    // Orders of fields only this chart uses are kept
+    setSetting(ORDER_KEY, JSON.stringify({ ...loadOrders(), ...scheme.orders }));
+    updated = scheme.updated;
+    setSetting(UPDATED_KEY, String(updated));
+    link.applyColors({ palette: scheme.palette, colors: { ...scheme.colors } });
+    await link.recolor();
+  }
+
+  // Joins the shared color scheme. Call once the chart's saved settings are loaded.
+  function linkColors (callbacks) {
+    link = callbacks;
+    try {
+      updated = Number(tableau.extensions.settings.get(UPDATED_KEY)) || 0;
+    } catch (error) {
+      updated = 0;
+    }
+    share('hello');
+  }
+
+  // The user changed the palette or member colors in this chart; call before saving the settings
+  function colorsChanged () {
+    updated = Date.now();
+    setSetting(UPDATED_KEY, String(updated));
+    share('scheme');
+  }
+
+  if (channel) {
+    channel.onmessage = ({ data }) => {
+      if (!link) return;
+      const mine = getScheme();
+      if (getContent(mine) === getContent(data.scheme)) return;
+      if (isNewer(data.scheme, mine)) adopt(data.scheme);
+      // A chart that just opened has an older scheme: send it this one
+      else if (data.type === 'hello') share('scheme');
+    };
+  }
+
   // Members of fieldName in palette slot order. names: the members in the data now. Members seen before keep their
   // slot; new ones (with the rest of the field's values) take the next slots alphabetically, and the order is saved.
   async function getColorOrder (worksheet, fieldName, names) {
@@ -68,8 +143,12 @@ window.ChartColors = (function () {
     const domain = await getFilterDomain(worksheet, fieldName);
     const added = sortMembers([...domain, ...names].filter(name => !known.has(name)));
     orders[fieldName] = [...order, ...added];
+    // The linked charts take the new members in the same slots
+    updated = Date.now();
     try {
       tableau.extensions.settings.set(ORDER_KEY, JSON.stringify(orders));
+      tableau.extensions.settings.set(UPDATED_KEY, String(updated));
+      share('scheme');
       await tableau.extensions.settings.saveAsync();
     } catch (error) {
       // Viewers can't save settings; the order still holds for this session
@@ -78,5 +157,5 @@ window.ChartColors = (function () {
     return orders[fieldName];
   }
 
-  return { PALETTE_NAMES, DEFAULT_PALETTE, OTHER_COLOR, sortMembers, paletteColor, getColorOrder };
+  return { PALETTE_NAMES, DEFAULT_PALETTE, OTHER_COLOR, sortMembers, paletteColor, getColorOrder, linkColors, colorsChanged };
 })();

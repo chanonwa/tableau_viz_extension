@@ -131,7 +131,8 @@ window.ComboSettingsForm = (function () {
           element('p', { class: 'hint', text: 'Splits the first bar measure into one colored group per value. Use Hatched or Light to mark values such as estimates.' }),
           element('div', { class: 'row' }, [element('span', { text: 'Bars' }), layout]),
           element('div', { class: 'row' }, [element('span', { text: 'Palette' }), palette]),
-          element('p', { class: 'hint', text: 'As in Tableau, each member keeps its palette color when filters change, and matches the radial chart.' }),
+          element('p', { class: 'hint', text: 'As in Tableau, each member keeps its palette color when filters change. Colors are shared with the radial chart: ' +
+            'a palette or color changed here changes there too.' }),
           element('table', { class: 'measure-table' }, [
             element('thead', {}, [element('tr', {}, ['Value', 'Color', 'Fill'].map(text => element('th', { text })))]),
             element('tbody', {}, memberRows)

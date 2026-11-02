@@ -519,8 +519,14 @@
     };
   }
 
+  function getColors () {
+    return { palette: state.colorGroup.palette, colors: state.colorGroup.colors };
+  }
+
   function applySettings (newState) {
+    const colorsBefore = JSON.stringify(getColors());
     state = mergeState(newState);
+    if (JSON.stringify(getColors()) !== colorsBefore) ChartColors.colorsChanged();
     saveState();
     // A different Bar Style field changes how rows split, so rebuild them
     rebuildRows();
@@ -1680,6 +1686,26 @@
 
   ChartSync.onPartnerHighlight(followHighlight);
 
+  // Shares the palette, picked member colors, and color order with the radial chart (colors.js)
+  function linkColors (worksheet) {
+    ChartColors.linkColors({
+      getColors,
+      applyColors: ({ palette, colors }) => {
+        state.colorGroup.palette = palette;
+        state.colorGroup.colors = colors;
+        saveState();
+      },
+      recolor: async () => {
+        // Before the first data arrives, the refresh picks up the new colors
+        if (!categoryField) return;
+        if (colorField) {
+          colorOrder = await ChartColors.getColorOrder(worksheet, colorField.name, rawRows.map(row => getLabel(row[colorField.name])));
+        }
+        render();
+      }
+    });
+  }
+
   // Redraw at most once per frame while the sheet is resized
   let resizeFrame = 0;
   window.addEventListener('resize', () => {
@@ -1696,6 +1722,7 @@
           return;
         }
         loadState();
+        linkColors(worksheet);
         updateFromTableau(worksheet);
       })
       .catch(error => showMessage(`Unable to initialize the Tableau extension: ${error.message || error}`));

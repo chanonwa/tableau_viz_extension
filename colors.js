@@ -34,20 +34,6 @@ window.ChartColors = (function () {
     return colors[Math.max(0, index) % colors.length];
   }
 
-  // Every value of the field, including ones a filter hides: the database domain of a filter on that field
-  async function getFilterDomain (worksheet, fieldName) {
-    try {
-      const filters = await worksheet.getFiltersAsync();
-      const filter = filters.find(item => item.filterType === tableau.FilterType.Categorical && item.fieldName === fieldName);
-      if (!filter) return [];
-      const domain = await filter.getDomainAsync(tableau.FilterDomainType.Database);
-      return domain.values.map(value => value.formattedValue ?? String(value.value));
-    } catch (error) {
-      console.warn('Unable to read the filter domain', error);
-      return [];
-    }
-  }
-
   function loadOrders () {
     try {
       return JSON.parse(tableau.extensions.settings.get(ORDER_KEY) || '{}');
@@ -61,7 +47,8 @@ window.ChartColors = (function () {
   // newest copy, so a member has the same color in every chart and a color changed in one chart changes in all.
   const UPDATED_KEY = 'colorSchemeUpdated';
   const channel = 'BroadcastChannel' in window ? new BroadcastChannel('chart-colors') : null;
-  // { getColors: () => ({ palette, colors }), applyColors({ palette, colors }), recolor() }, from linkColors
+  // { getColors: () => ({ palette, colors }), applyColors({ palette, colors }) (updates the chart's settings without
+  // saving them), recolor() }, from linkColors
   let link = null;
   // When this chart's scheme last changed (epoch ms; 0 = before charts shared colors)
   let updated = 0;
@@ -99,6 +86,7 @@ window.ChartColors = (function () {
     updated = scheme.updated;
     setSetting(UPDATED_KEY, String(updated));
     link.applyColors({ palette: scheme.palette, colors: { ...scheme.colors } });
+    scheduleSave();
     await link.recolor();
   }
 
@@ -132,7 +120,8 @@ window.ChartColors = (function () {
   }
 
   // Members of fieldName in palette slot order. names: the members in the data now. Members seen before keep their
-  // slot; new ones (with the rest of the field's values) take the next slots alphabetically, and the order is saved.
+  // slot; new ones take the next slots alphabetically, and the order is saved. It reads no filters: asking Tableau for
+  // them while it is applying a filter could fail the user's filter action.
   async function getColorOrder (worksheet, fieldName, names) {
     if (!worksheet || !fieldName) return sortMembers(names);
     const orders = loadOrders();
@@ -140,21 +129,30 @@ window.ChartColors = (function () {
     const known = new Set(order);
     if (names.every(name => known.has(name))) return order;
 
-    const domain = await getFilterDomain(worksheet, fieldName);
-    const added = sortMembers([...domain, ...names].filter(name => !known.has(name)));
-    orders[fieldName] = [...order, ...added];
+    orders[fieldName] = [...order, ...sortMembers(names.filter(name => !known.has(name)))];
     // The linked charts take the new members in the same slots
     updated = Date.now();
-    try {
-      tableau.extensions.settings.set(ORDER_KEY, JSON.stringify(orders));
-      tableau.extensions.settings.set(UPDATED_KEY, String(updated));
-      share('scheme');
-      await tableau.extensions.settings.saveAsync();
-    } catch (error) {
-      // Viewers can't save settings; the order still holds for this session
-      console.warn('Unable to save the color order', error);
-    }
+    setSetting(ORDER_KEY, JSON.stringify(orders));
+    setSetting(UPDATED_KEY, String(updated));
+    share('scheme');
+    scheduleSave();
     return orders[fieldName];
+  }
+
+  // Saves made without the user pressing OK (new color slots, a scheme taken from another chart) wait until the data
+  // has settled, so they never run while Tableau is still applying a filter, and run only while authoring: viewers
+  // can't save, and the scheme still holds for their session.
+  let saveTimer = 0;
+  function scheduleSave () {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(async () => {
+      try {
+        if (tableau.extensions.environment.mode !== 'authoring') return;
+        await tableau.extensions.settings.saveAsync();
+      } catch (error) {
+        console.warn('Unable to save the color scheme', error);
+      }
+    }, 3000);
   }
 
   return { PALETTE_NAMES, DEFAULT_PALETTE, OTHER_COLOR, sortMembers, paletteColor, getColorOrder, linkColors, colorsChanged };

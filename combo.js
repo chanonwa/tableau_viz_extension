@@ -1693,7 +1693,8 @@
       applyColors: ({ palette, colors }) => {
         state.colorGroup.palette = palette;
         state.colorGroup.colors = colors;
-        saveState();
+        // colors.js saves it once the data has settled
+        if (inTableau) tableau.extensions.settings.set(SETTINGS_KEY, JSON.stringify(state));
       },
       recolor: async () => {
         // Before the first data arrives, the refresh picks up the new colors

@@ -161,7 +161,7 @@ Open <https://chanonwa.github.io/tableau_viz_extension/index.html>, <https://cha
 
 ### In Tableau Desktop
 
-No local server is needed. On a worksheet, open the mark type dropdown on the Marks card, choose **Add Extension** > **Access Local Viz Extensions**, and pick `combo.server.trex`, `anomaly.server.trex`, `radial.server.trex`, or `kpi.server.trex`. In the extension list they show as "Multi-Measure Combo Chart (GitHub Pages)", "Anomaly Detection (GitHub Pages)", "Radial Chart (GitHub Pages)", and "KPI Card (GitHub Pages)".
+No local server is needed. On a worksheet, open the mark type dropdown on the Marks card, choose **Add Extension** > **Access Local Viz Extensions**, and pick `combo.server.trex`, `anomaly.server.trex`, `radial.server.trex`, or `kpi.server.trex`. In the extension list they show as "Multi-Measure Combo Chart v1.1 (GitHub Pages)", "Anomaly Detection (GitHub Pages)", "Radial Chart v1.1 (GitHub Pages)", and "KPI Card (GitHub Pages)".
 
 ### On Tableau Server or Tableau Cloud
 
